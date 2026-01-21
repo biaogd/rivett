@@ -1,87 +1,25 @@
+mod components;
+mod message;
+mod state;
 mod style;
 mod terminal_widget;
+mod views;
 
-use iced::{Alignment, Element, Length, Settings, Task, Theme};
+use iced::{Element, Length, Settings, Task, Theme};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::core::SessionManager;
+use crate::core::session::Session;
 use crate::platform::PlatformServices;
 use crate::session::{SessionConfig, SessionStorage};
-use crate::terminal::TerminalEmulator;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::Read;
 use style as ui_style;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ActiveView {
-    Terminal,
-    SessionManager,
-}
-
-#[derive(Debug, Clone)]
-pub enum Message {
-    // CreateSession, // Removed unused
-    CreateLocalTab,
-    SelectTab(usize),
-    CloseTab(usize),
-    ToggleMenu,
-    // Menu actions
-    ShowSessionManager,
-    ShowSftp,
-    ShowPortForwarding,
-    ShowSettings,
-    // Quick Connect
-    ToggleQuickConnect,
-    QuickConnectQueryChanged(String),
-    SelectQuickConnectSession(String), // Session Name
-    // Session management
-    CreateNewSession,
-    EditSession(String),
-    DeleteSession(String),
-    ConnectToSession(String),
-    SaveSession,
-    CancelSessionEdit,
-    CloseSessionManager,
-    ToggleAuthMethod,
-    #[allow(dead_code)]
-    ClearValidationError,
-    // Session form fields
-    SessionNameChanged(String),
-    SessionHostChanged(String),
-    SessionPortChanged(String),
-    SessionUsernameChanged(String),
-    SessionPasswordChanged(String),
-    // SSH Connection
-    SessionConnected(
-        Result<
-            (
-                Arc<Mutex<crate::ssh::SshSession>>,
-                Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>>,
-            ),
-            String,
-        >,
-        usize,
-    ),
-    ShellOpened(Result<russh::ChannelId, String>, usize),
-    TerminalDataReceived(usize, Vec<u8>),
-    TerminalInput(Vec<u8>),
-    // Terminal Mouse Events
-    TerminalMousePress(usize, usize),
-    TerminalMouseDrag(usize, usize),
-    TerminalMouseRelease,
-    TerminalMouseDoubleClick(usize, usize),
-    TerminalResize(usize, usize),
-    WindowResized(u32, u32),
-    ScrollWheel(f32), // delta in lines
-    Tick(std::time::Instant),
-    RetryConnection(usize),   // tab index to retry
-    EditSessionConfig(usize), // tab index to edit
-    Copy,
-    Paste,
-    ClipboardReceived(Option<String>),
-    Ignore,
-}
+// Re-export types from sub-modules
+pub use message::{ActiveView, Message};
+pub use state::{SessionState, SessionTab};
 
 #[derive(Debug)]
 pub struct App {
@@ -799,167 +737,55 @@ impl App {
         Task::batch(commands)
     }
 
-    fn quick_connect_view(&self) -> Element<'_, Message> {
-        use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
-
-        // 1. Search Bar
-        let search_bar = text_input("Search sessions...", &self.quick_connect_query)
-            .on_input(Message::QuickConnectQueryChanged)
-            .padding(10)
-            .size(14)
-            .style(ui_style::search_input);
-
-        // 2. Remote Sessions List
-        let filtered_sessions: Vec<_> = self
-            .saved_sessions
-            .iter()
-            .filter(|s| {
-                self.quick_connect_query.is_empty()
-                    || s.name
-                        .to_lowercase()
-                        .contains(&self.quick_connect_query.to_lowercase())
-                    || s.host
-                        .to_lowercase()
-                        .contains(&self.quick_connect_query.to_lowercase())
-            })
-            .collect();
-
-        let sessions_list: Element<'_, Message> = if filtered_sessions.is_empty() {
-            container(
-                text("No matching sessions")
-                    .size(14)
-                    .style(ui_style::muted_text),
-            )
-            .padding(20)
-            .center_x(Length::Fill)
-            .into()
-        } else {
-            column(
-                filtered_sessions
-                    .iter()
-                    .map(|session| {
-                        button(
-                            row![
-                                text(">_")
-                                    .size(14)
-                                    .style(ui_style::muted_text)
-                                    .width(Length::Fixed(24.0)),
-                                column![
-                                    text(&session.name).size(14),
-                                    text(format!("{}:{}", session.host, session.port))
-                                        .size(12)
-                                        .style(ui_style::muted_text),
-                                ]
-                                .spacing(2),
-                            ]
-                            .align_y(Alignment::Center),
-                        )
-                        .width(Length::Fill)
-                        .padding(10)
-                        .style(ui_style::quick_connect_item)
-                        .on_press(Message::SelectQuickConnectSession(session.id.clone()))
-                        .into()
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .spacing(2)
-            .into()
-        };
-
-        let remote_section = column![
-            text("REMOTE SESSIONS")
-                .size(11)
-                .style(ui_style::quick_connect_section_header),
-            sessions_list
-        ]
-        .spacing(8);
-
-        // 3. Local System Section
-        let local_section = column![
-            text("LOCAL SYSTEM")
-                .size(11)
-                .style(ui_style::quick_connect_section_header),
-            button(
-                row![
-                    text("💻").size(16).width(Length::Fixed(24.0)),
-                    text("Local Terminal (Bash)").size(14),
-                ]
-                .align_y(Alignment::Center),
-            )
-            .width(Length::Fill)
-            .padding(10)
-            .style(ui_style::quick_connect_item)
-            .on_press(Message::CreateLocalTab),
-        ]
-        .spacing(8);
-
-        // 4. Footer Hints
-        let footer = row![
-            text("↑↓ NAVIGATE")
-                .size(10)
-                .style(ui_style::quick_connect_footer_hint),
-            text("↩ SELECT")
-                .size(10)
-                .style(ui_style::quick_connect_footer_hint),
-            Space::new().width(Length::Fill),
-            text("⌘ MANAGE ALL")
-                .size(10)
-                .style(ui_style::quick_connect_footer_hint),
-        ]
-        .spacing(16)
-        .padding(8);
-
-        // Assemble Content
-        let content = column![
-            search_bar,
-            Space::new().height(16.0),
-            scrollable(column![
-                remote_section,
-                Space::new().height(24.0),
-                local_section
-            ])
-            .height(Length::Fill),
-            Space::new().height(16.0),
-            footer
-        ]
-        .spacing(0)
-        .padding(24)
-        .width(Length::Fixed(600.0))
-        .height(Length::Fixed(450.0));
-
-        container(content)
-            .style(ui_style::quick_connect_container)
-            .into()
-    }
-
     pub fn view(&self) -> Element<'_, Message> {
         use iced::widget::container::transparent;
         use iced::widget::{Space, button, column, container, row, stack};
 
         let content = match self.active_view {
-            ActiveView::Terminal => self.terminal_view(),
-            ActiveView::SessionManager => self.session_manager_view(),
+            ActiveView::Terminal => views::terminal::render(&self.tabs, self.active_tab),
+            ActiveView::SessionManager => views::session_manager::render(
+                &self.saved_sessions,
+                self.editing_session.as_ref(),
+                &self.form_name,
+                &self.form_host,
+                &self.form_port,
+                &self.form_username,
+                &self.form_password,
+                self.auth_method_password,
+                self.validation_error.as_ref(),
+            ),
         };
 
+        // Build layout from top to bottom: tab_bar (if terminal) -> content -> status_bar
         let mut main_layout = column![];
 
-        if !self.tabs.is_empty() {
-            main_layout = main_layout.push(self.global_tab_bar());
+        // Tab bar at the top (only in terminal view)
+        if self.active_view == ActiveView::Terminal {
+            main_layout = main_layout.push(views::tab_bar::render(
+                &self.tabs,
+                self.active_tab,
+                self.active_view,
+            ));
         }
 
-        let main_layout = main_layout
-            .push(content)
-            .push(self.global_status_bar())
-            .spacing(0)
-            .height(Length::Fill);
+        // Main content
+        main_layout = main_layout.push(content);
 
-        let base_container = container(main_layout)
+        // Status bar at the bottom
+        main_layout = main_layout.push(views::status_bar::render(
+            &self.tabs,
+            self.active_tab,
+            self.active_view,
+            self.show_menu,
+        ));
+
+        let base_container = container(main_layout.spacing(0).height(Length::Fill))
             .width(Length::Fill)
             .height(Length::Fill)
             .style(ui_style::app_background);
 
         let main_view: Element<'_, Message> = if self.show_menu {
-            let left_menu = container(self.sidebar_menu())
+            let left_menu = container(views::sidebar::render())
                 .width(Length::Fixed(180.0))
                 .height(Length::Fill)
                 .padding(12)
@@ -975,11 +801,14 @@ impl App {
 
         if self.show_quick_connect {
             // Center the popover
-            let popover = container(self.quick_connect_view())
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill);
+            let popover = container(views::quick_connect::render(
+                &self.quick_connect_query,
+                &self.saved_sessions,
+            ))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
 
             // Dark semi-transparent overlay
             let overlay = button(
@@ -997,571 +826,6 @@ impl App {
         } else {
             main_view
         }
-    }
-
-    fn terminal_view(&self) -> Element<'_, Message> {
-        use iced::widget::{column, container, row, text};
-
-        if self.tabs.is_empty() {
-            return column![
-                container(
-                    column![
-                        text("No open tabs").size(24).style(ui_style::header_text),
-                        text("Create a new session to get started").style(ui_style::muted_text),
-                        iced::widget::button(text("Create Session"))
-                            .on_press(Message::CreateNewSession)
-                            .padding([10, 20])
-                            .style(ui_style::save_button)
-                    ]
-                    .spacing(20)
-                    .align_x(Alignment::Center)
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-            ]
-            .into();
-        }
-
-        let (current_tab_cache, current_emulator, current_tab_state, _current_spinner_cache) =
-            if let Some(tab) = self.tabs.get(self.active_tab) {
-                (
-                    &tab.cache,
-                    tab.emulator.clone(),
-                    &tab.state,
-                    &tab.spinner_cache,
-                )
-            } else {
-                // Should be covered by is_empty check, but safe fallback
-                (
-                    &self.tabs[0].cache,
-                    self.tabs[0].emulator.clone(),
-                    &self.tabs[0].state,
-                    &self.tabs[0].spinner_cache,
-                )
-            };
-
-        match current_tab_state {
-            SessionState::Connecting(start_time) => {
-                let _elapsed = start_time.elapsed().as_secs_f32();
-                // We'll use a simple container with text for now, or a custom widget
-                // Given Iced complexity, let's start with a centered text that says "Connecting..."
-                // To animate, we effectively need a Canvas widget.
-
-                // Let's us terminal_widget's new Spinner capability if we add it,
-                // OR just use a canvas here.
-
-                let spinner = iced::widget::canvas(Spinner::new(*start_time))
-                    .width(Length::Fixed(50.0))
-                    .height(Length::Fixed(50.0));
-
-                container(
-                    column![
-                        spinner,
-                        text("Connecting...").size(16).style(ui_style::muted_text)
-                    ]
-                    .spacing(20)
-                    .align_x(Alignment::Center),
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .into()
-            }
-            SessionState::Failed(err) => {
-                let current_tab_index = self.active_tab;
-
-                container(
-                    column![
-                        text("❌ Connection Failed")
-                            .size(24)
-                            .color(iced::Color::from_rgb(0.8, 0.2, 0.2)),
-                        text(err).size(14).style(ui_style::muted_text),
-                        row![
-                            iced::widget::button(text("🔄 Retry").size(14))
-                                .padding([8, 16])
-                                .on_press(Message::RetryConnection(current_tab_index)),
-                            iced::widget::button(text("✏️ Edit").size(14))
-                                .padding([8, 16])
-                                .on_press(Message::EditSessionConfig(current_tab_index)),
-                        ]
-                        .spacing(12)
-                    ]
-                    .spacing(20)
-                    .align_x(Alignment::Center),
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .into()
-            }
-            _ => iced::widget::responsive(move |size| {
-                let _cols = (size.width / terminal_widget::CELL_WIDTH) as usize;
-                let _rows = (size.height / terminal_widget::CELL_HEIGHT) as usize;
-
-                container(
-                    terminal_widget::TerminalView::new(current_emulator.clone(), current_tab_cache)
-                        .view(),
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .padding(0)
-                .style(ui_style::terminal_content)
-                .into()
-            })
-            .into(),
-        }
-    }
-
-    fn session_manager_view(&self) -> Element<'_, Message> {
-        use iced::widget::{button, column, container, row, scrollable, text};
-
-        let title_bar = row![
-            text("Session Manager").size(20),
-            container("").width(Length::Fill),
-            button(text("+ New").size(14))
-                .padding([8, 16])
-                .style(ui_style::new_tab_button)
-                .on_press(Message::CreateNewSession),
-            button(text("✕").size(16))
-                .padding([8, 12])
-                .style(ui_style::tab_close_button)
-                .on_press(Message::CloseSessionManager),
-        ]
-        .spacing(12)
-        .align_y(Alignment::Center)
-        .padding([12, 16]);
-
-        // Left panel: Session list
-        let session_list: Element<Message> = if self.saved_sessions.is_empty() {
-            column![
-                container("").height(Length::Fixed(60.0)),
-                text("No saved sessions")
-                    .size(14)
-                    .style(ui_style::muted_text),
-                container("").height(Length::Fixed(8.0)),
-                text("Click '+ New' to create")
-                    .size(12)
-                    .style(ui_style::muted_text),
-            ]
-            .align_x(Alignment::Center)
-            .into()
-        } else {
-            iced::widget::responsive(move |size| {
-                let card_width = 320.0;
-                let spacing = 16.0;
-                let padding = 24.0;
-                // Calculate columns based on available width
-                let cols = ((size.width - padding) / (card_width + spacing))
-                    .floor()
-                    .max(1.0) as usize;
-
-                let chunks = self.saved_sessions.chunks(cols);
-                let mut content = column![].spacing(spacing).padding(12);
-
-                for chunk in chunks {
-                    let mut row = row![].spacing(spacing);
-                    for session in chunk {
-                        row = row.push(self.session_card(session));
-                    }
-                    content = content.push(row);
-                }
-
-                scrollable(content).height(Length::Fill).into()
-            })
-            .into()
-        };
-
-        // Right panel: Form or empty state
-        let right_panel = if self.editing_session.is_some() {
-            container(
-                container(scrollable(self.session_form_content()).height(Length::Fill))
-                    .padding(16)
-                    .height(Length::Fill)
-                    .style(ui_style::panel),
-            )
-            .width(Length::Fixed(400.0)) // Fixed width for form instead of portion
-            .height(Length::Fill)
-            .padding(12)
-        } else {
-            container("")
-                .width(Length::Fixed(0.0))
-                .height(Length::Fixed(0.0))
-        };
-
-        let content = column![
-            container(title_bar)
-                .width(Length::Fill)
-                .style(ui_style::tab_bar),
-            row![
-                container(session_list)
-                    .width(Length::Fill) // Take remaining space
-                    .height(Length::Fill),
-                right_panel,
-            ]
-            .height(Length::Fill),
-        ]
-        .spacing(0);
-
-        // Return content directly (shell adds background)
-        content.into()
-    }
-
-    fn session_card(&self, session: &SessionConfig) -> Element<'_, Message> {
-        use iced::widget::{button, column, container, row, text};
-
-        let connection_info = format!("{}@{}:{}", session.username, session.host, session.port);
-
-        let mut card_content = column![
-            row![
-                text(session.name.clone()).size(16),
-                container("").width(Length::Fill),
-            ],
-            text(connection_info).size(13).style(ui_style::muted_text),
-        ]
-        .spacing(4);
-
-        // Only show last connected if it exists
-        if let Some(dt) = session.last_connected {
-            card_content = card_content.push(container("").height(4.0)).push(
-                text(format!("Last connected: {}", dt.format("%Y-%m-%d %H:%M")))
-                    .size(12)
-                    .style(ui_style::muted_text),
-            );
-        }
-
-        card_content = card_content.push(container("").height(8.0)).push(
-            row![
-                button(text("Connect").size(13))
-                    .padding([6, 16])
-                    .style(ui_style::new_tab_button)
-                    .on_press(Message::ConnectToSession(session.id.clone())),
-                button(text("Edit").size(13))
-                    .padding([6, 16])
-                    .style(ui_style::menu_button(false))
-                    .on_press(Message::EditSession(session.id.clone())),
-                button(text("Delete").size(13))
-                    .padding([6, 16])
-                    .style(ui_style::tab_close_button)
-                    .on_press(Message::DeleteSession(session.id.clone())),
-            ]
-            .spacing(8),
-        );
-
-        let final_card = card_content.padding(12);
-
-        container(final_card)
-            .width(Length::Fixed(360.0))
-            .style(ui_style::panel)
-            .into()
-    }
-
-    fn session_form_content(&self) -> Element<'_, Message> {
-        use iced::widget::{button, column, container, row, text, text_input};
-
-        let is_new = self
-            .editing_session
-            .as_ref()
-            .map(|s| !self.saved_sessions.iter().any(|saved| saved.id == s.id))
-            .unwrap_or(false);
-
-        let title = if is_new {
-            "New Session"
-        } else {
-            "Edit Session"
-        };
-
-        let form_header = row![
-            text(title).size(15),
-            container("").width(Length::Fill),
-            button(text("Save").size(12))
-                .padding([5, 10])
-                .style(ui_style::new_tab_button)
-                .on_press(Message::SaveSession),
-            button(text("Cancel").size(12))
-                .padding([5, 10])
-                .style(ui_style::tab_close_button)
-                .on_press(Message::CancelSessionEdit),
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center)
-        .padding(iced::Padding::default().bottom(10));
-
-        let error_banner = if let Some(ref error) = self.validation_error {
-            container(
-                text(format!("⚠️ {}", error))
-                    .size(12)
-                    .color(iced::Color::from_rgb(0.8, 0.2, 0.2)),
-            )
-            .padding(10)
-            .width(Length::Fill)
-            .style(ui_style::panel)
-        } else {
-            container("")
-        };
-
-        column![
-            form_header,
-            error_banner,
-            container("").height(8.0),
-            text("Name").size(11).style(ui_style::muted_text),
-            text_input("Production Server", &self.form_name)
-                .on_input(Message::SessionNameChanged)
-                .padding(8)
-                .size(12),
-            container("").height(8.0),
-            text("Host").size(11).style(ui_style::muted_text),
-            text_input("example.com", &self.form_host)
-                .on_input(Message::SessionHostChanged)
-                .padding(8)
-                .size(12),
-            container("").height(8.0),
-            row![
-                column![
-                    text("Port").size(11).style(ui_style::muted_text),
-                    text_input("22", &self.form_port)
-                        .on_input(Message::SessionPortChanged)
-                        .padding(8)
-                        .size(12)
-                        .width(Length::Fixed(80.0)),
-                ]
-                .spacing(3),
-                container("").width(Length::Fixed(12.0)),
-                column![
-                    text("Username").size(11).style(ui_style::muted_text),
-                    text_input("user", &self.form_username)
-                        .on_input(Message::SessionUsernameChanged)
-                        .padding(8)
-                        .size(12)
-                        .width(Length::Fill),
-                ]
-                .spacing(3)
-                .width(Length::Fill),
-            ],
-            container("").height(8.0),
-            text("Authentication").size(11).style(ui_style::muted_text),
-            row![
-                button(text("🔑 Private Key").size(11))
-                    .padding([6, 12])
-                    .style(move |theme, status| {
-                        if !self.auth_method_password {
-                            ui_style::new_tab_button(theme, status)
-                        } else {
-                            (ui_style::menu_button(false))(theme, status)
-                        }
-                    })
-                    .on_press(if self.auth_method_password {
-                        Message::ToggleAuthMethod
-                    } else {
-                        Message::ToggleAuthMethod // dummy, won't toggle if already selected
-                    }),
-                button(text("🔒 Password").size(11))
-                    .padding([6, 12])
-                    .style(move |theme, status| {
-                        if self.auth_method_password {
-                            ui_style::new_tab_button(theme, status)
-                        } else {
-                            (ui_style::menu_button(false))(theme, status)
-                        }
-                    })
-                    .on_press(if !self.auth_method_password {
-                        Message::ToggleAuthMethod
-                    } else {
-                        Message::ToggleAuthMethod // dummy
-                    }),
-            ]
-            .spacing(6),
-            container("").height(8.0),
-            if !self.auth_method_password {
-                column![
-                    text("Private Key Path")
-                        .size(11)
-                        .style(ui_style::muted_text),
-                    text_input("~/.ssh/id_rsa", "~/.ssh/id_rsa")
-                        .padding(8)
-                        .size(12),
-                ]
-                .spacing(3)
-            } else {
-                column![
-                    text("Password").size(11).style(ui_style::muted_text),
-                    text_input("", &self.form_password)
-                        .on_input(Message::SessionPasswordChanged)
-                        .padding(8)
-                        .size(12)
-                        .secure(true),
-                ]
-                .spacing(3)
-            },
-        ]
-        .spacing(3)
-        .into()
-    }
-
-    fn sidebar_menu(&self) -> Element<'_, Message> {
-        use iced::widget::{Space, button, column, container, row, text};
-
-        column![
-            text("MENU").size(12).style(ui_style::muted_text),
-            container("").width(Length::Fill).height(8.0),
-            button(
-                row![text("📂").size(18), text("Sessions").size(15),]
-                    .spacing(8)
-                    .align_y(Alignment::Center)
-            )
-            .width(Length::Fill)
-            .padding([10, 14])
-            .style(ui_style::menu_item)
-            .on_press(Message::ShowSessionManager),
-            button(
-                row![text("📁").size(18), text("SFTP").size(15),]
-                    .spacing(8)
-                    .align_y(Alignment::Center)
-            )
-            .width(Length::Fill)
-            .padding([10, 14])
-            .style(ui_style::menu_item)
-            .on_press(Message::ShowSftp),
-            button(
-                row![text("🔀").size(18), text("Forwarding").size(15),]
-                    .spacing(8)
-                    .align_y(Alignment::Center)
-            )
-            .width(Length::Fill)
-            .padding([10, 14])
-            .style(ui_style::menu_item)
-            .on_press(Message::ShowPortForwarding),
-            container("")
-                .width(Length::Fill)
-                .height(1.0)
-                .style(ui_style::menu_divider),
-            button(
-                row![text("⚙️").size(18), text("Settings").size(15),]
-                    .spacing(8)
-                    .align_y(Alignment::Center)
-            )
-            .width(Length::Fill)
-            .padding([8, 12])
-            .style(ui_style::menu_item)
-            .on_press(Message::ShowSettings),
-            Space::new().height(Length::Fill),
-            button(
-                row![text("«").size(14), text("Collapse").size(12),]
-                    .spacing(8)
-                    .align_y(Alignment::Center)
-            )
-            .width(Length::Fill)
-            .padding([6, 12])
-            .style(ui_style::menu_item)
-            .on_press(Message::ToggleMenu),
-        ]
-        .spacing(2)
-        .into()
-    }
-
-    fn global_status_bar(&self) -> Element<'_, Message> {
-        use iced::widget::{button, container, row, text};
-
-        let current_tab = self.tabs.get(self.active_tab);
-        let status_left = if let Some(tab) = current_tab {
-            if self.active_view == ActiveView::Terminal {
-                format!("{}  ● Connected 120ms", tab.title)
-            } else {
-                "Session Manager".to_string()
-            }
-        } else {
-            if self.active_view == ActiveView::SessionManager {
-                "Session Manager".to_string()
-            } else {
-                "No active session".to_string()
-            }
-        };
-
-        let menu_button = if !self.show_menu {
-            row![
-                button(text("≡").size(20))
-                    .padding([4, 8])
-                    .style(ui_style::menu_button(self.show_menu))
-                    .on_press(Message::ToggleMenu),
-                text("│").size(12).style(ui_style::muted_text),
-            ]
-        } else {
-            row![]
-        };
-
-        let status_bar = row![
-            menu_button,
-            text(status_left).size(12),
-            container("").width(Length::Fill),
-            text("UTF-8").size(12).style(ui_style::muted_text),
-            text("│").size(12).style(ui_style::muted_text),
-            text("24x120").size(12).style(ui_style::muted_text),
-            text("│").size(12).style(ui_style::muted_text),
-            text("↑ 3.2MB/s").size(12).style(ui_style::muted_text),
-        ]
-        .align_y(Alignment::Center)
-        .spacing(8);
-
-        container(status_bar)
-            .width(Length::Fill)
-            .padding([6, 12])
-            .style(ui_style::status_bar)
-            .into()
-    }
-
-    fn global_tab_bar(&self) -> Element<'_, Message> {
-        use iced::widget::{button, container, row, text};
-
-        let mut tabs_row =
-            self.tabs
-                .iter()
-                .enumerate()
-                .fold(row![].spacing(4), |row, (index, tab)| {
-                    let is_active =
-                        index == self.active_tab && self.active_view == ActiveView::Terminal;
-
-                    // Tab with close button
-                    let tab_content = row![
-                        text(&tab.title).size(13),
-                        button(text("×").size(14))
-                            .padding([0, 4])
-                            .style(ui_style::tab_close_button)
-                            .on_press(Message::CloseTab(index)),
-                    ]
-                    .spacing(8)
-                    .align_y(Alignment::Center);
-
-                    row.push(
-                        button(tab_content)
-                            .padding([8, 16])
-                            .style(ui_style::compact_tab(is_active))
-                            .on_press(Message::SelectTab(index)),
-                    )
-                });
-
-        // Only show '+' button if we are NOT in the Session Manager view
-        if self.active_view != ActiveView::SessionManager {
-            tabs_row = tabs_row.push(
-                button(text("+").size(16))
-                    .padding([6, 12])
-                    .style(ui_style::new_tab_button)
-                    .on_press(Message::ToggleQuickConnect),
-            );
-        }
-
-        let tab_bar = tabs_row
-            .push(container("").width(Length::Fill))
-            .align_y(Alignment::Center)
-            .spacing(8);
-
-        container(tab_bar)
-            .width(Length::Fill)
-            .padding([8, 12])
-            .style(ui_style::tab_bar)
-            .into()
     }
 
     pub fn run(_settings: Settings) -> iced::Result {
@@ -1633,120 +897,5 @@ impl App {
         }
 
         iced::Subscription::batch(subs)
-    }
-}
-
-use crate::core::session::Session;
-use iced::widget::canvas::Cache;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SessionState {
-    Connecting(std::time::Instant), // Instant for animation start time
-    Connected,
-    Disconnected,
-    Failed(String),
-}
-
-#[derive(Debug)]
-pub struct SessionTab {
-    pub title: String,
-    pub cache: Cache,
-    pub state: SessionState,
-    pub spinner_cache: Cache, // Cache for spinner drawing
-    // Session (abstracted)
-    pub session: Option<Session>,
-    // Temporary storage for SSH handle before shell is opened
-    pub ssh_handle: Option<Arc<Mutex<crate::ssh::SshSession>>>,
-    pub rx: Option<Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>>>,
-    pub emulator: TerminalEmulator,
-}
-
-impl Clone for SessionTab {
-    fn clone(&self) -> Self {
-        Self {
-            title: self.title.clone(),
-            cache: iced::widget::canvas::Cache::new(),
-            state: self.state.clone(),
-            spinner_cache: iced::widget::canvas::Cache::new(),
-            session: self.session.clone(),
-            ssh_handle: self.ssh_handle.clone(),
-            rx: self.rx.clone(),
-            emulator: self.emulator.clone(),
-        }
-    }
-}
-
-impl SessionTab {
-    pub fn new(title: &str) -> Self {
-        Self {
-            title: title.to_string(),
-            cache: Cache::default(),
-            state: SessionState::Connecting(std::time::Instant::now()),
-            spinner_cache: Cache::default(),
-            session: None,
-            ssh_handle: None,
-            rx: None,
-            emulator: TerminalEmulator::new(),
-        }
-    }
-}
-
-// Simple Spinner definition
-struct Spinner {
-    start: std::time::Instant,
-}
-
-impl Spinner {
-    fn new(start: std::time::Instant) -> Self {
-        Self { start }
-    }
-}
-
-impl<Message> iced::widget::canvas::Program<Message> for Spinner {
-    type State = ();
-
-    fn draw(
-        &self,
-        _state: &(),
-        renderer: &iced::Renderer,
-        _theme: &iced::Theme,
-        bounds: iced::Rectangle,
-        _cursor: iced::mouse::Cursor,
-    ) -> Vec<iced::widget::canvas::Geometry> {
-        let mut frame = iced::widget::canvas::Frame::new(renderer, bounds.size());
-
-        let center = frame.center();
-        let radius = bounds.width.min(bounds.height) / 2.0;
-        let time = self.start.elapsed().as_secs_f32();
-
-        // Warning: Path::arc is not a direct method, use Path::circle for shadow
-        let shadow = iced::widget::canvas::Path::circle(center, radius - 4.0);
-        frame.stroke(
-            &shadow,
-            iced::widget::canvas::Stroke::default()
-                .with_color(iced::Color::from_rgba(0.0, 0.0, 0.0, 0.1))
-                .with_width(4.0),
-        );
-
-        let start_angle = time * 5.0;
-        let end_angle = start_angle + 1.5; // quarter circle arc
-
-        let arc = iced::widget::canvas::Path::new(|b| {
-            b.arc(iced::widget::canvas::path::Arc {
-                center,
-                radius: radius - 4.0,
-                start_angle: iced::Radians(start_angle),
-                end_angle: iced::Radians(end_angle),
-            });
-        });
-
-        frame.stroke(
-            &arc,
-            iced::widget::canvas::Stroke::default()
-                .with_color(iced::Color::from_rgb(0.2, 0.4, 0.8))
-                .with_width(4.0),
-        );
-
-        vec![frame.into_geometry()]
     }
 }
