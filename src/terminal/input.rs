@@ -5,11 +5,17 @@ use iced::keyboard::{self, Key, Modifiers};
 pub fn map_key_to_input(key: Key, modifiers: Modifiers) -> Option<Vec<u8>> {
     match key {
         Key::Character(c) => {
+            // Filter Cmd+C (or Ctrl+C on non-macOS if Command is not present) for copy action
+            // This allows the UI to handle the copy event.
+            if modifiers.command() && (c.as_str() == "c" || c.as_str() == "C") {
+                return None;
+            }
+
             let s = c.as_str();
 
             // Handle Control + Character (e.g. Ctrl+C = 0x03)
             // ONLY if Ctrl is pressed (not Shift or other modifiers)
-            if modifiers.control() && !modifiers.shift() && !modifiers.alt() {
+            if modifiers.control() && !modifiers.shift() && !modifiers.command() {
                 let bytes = s.as_bytes();
                 if bytes.len() == 1 {
                     let b = bytes[0];

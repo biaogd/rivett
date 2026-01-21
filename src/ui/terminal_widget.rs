@@ -26,19 +26,113 @@ impl<'a> TerminalView<'a> {
     }
 }
 
+pub struct TerminalWidgetState {
+    is_dragging: bool,
+    last_click_time: Option<std::time::Instant>,
+}
+
+impl Default for TerminalWidgetState {
+    fn default() -> Self {
+        Self {
+            is_dragging: false,
+            last_click_time: None,
+        }
+    }
+}
+
 impl<'a> canvas::Program<Message> for TerminalView<'a> {
-    type State = ();
+    type State = TerminalWidgetState;
 
     fn update(
         &self,
-        _state: &mut Self::State,
-        _event: &iced::event::Event,
-        _bounds: Rectangle,
-        _cursor: mouse::Cursor,
+        state: &mut Self::State,
+        event: &iced::event::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
     ) -> Option<iced::widget::canvas::Action<Message>> {
-        // We rely on the global subscription in App for scroll events
-        // to avoid duplicate handling and state conflicts.
+        if let iced::event::Event::Mouse(mouse_event) = event {
+            // Need cell position
+            // But if we release OUTSIDE bounds, we still need to stop drag.
+            // So ButtonReleased should be handled regardless of bounds?
+            // "If cursor is over bounds"
+            // The Canvas `update` is only called if events are relevant?
+            // Actually `update` is called for all events if the widget is active.
+
+            // To be safe, calculate col/line if over bounds.
+
+            let is_over = cursor.is_over(bounds);
+
+            match mouse_event {
+                mouse::Event::ButtonPressed(mouse::Button::Left) => {
+                    if is_over {
+                        if let Some(position) = cursor.position_in(bounds) {
+                            let col = (position.x / CELL_WIDTH) as usize;
+                            let line = (position.y / CELL_HEIGHT) as usize;
+
+                            let mut emulator = self.emulator.clone();
+
+                            // Check for double click
+                            let now = std::time::Instant::now();
+                            if let Some(last_click) = state.last_click_time {
+                                if now.duration_since(last_click).as_millis() < 500 {
+                                    // Double click!
+                                    emulator.on_mouse_double_click(col, line);
+                                    state.is_dragging = true;
+                                    state.last_click_time = None; // Reset
+                                    self.cache.clear();
+                                    return Some(iced::widget::canvas::Action::request_redraw());
+                                }
+                            }
+
+                            // Single click
+                            emulator.on_mouse_press(col, line);
+                            state.is_dragging = true;
+                            state.last_click_time = Some(now);
+
+                            self.cache.clear();
+                            return Some(iced::widget::canvas::Action::request_redraw());
+                        }
+                    }
+                }
+                mouse::Event::CursorMoved { .. } => {
+                    if state.is_dragging && is_over {
+                        if let Some(position) = cursor.position_in(bounds) {
+                            let col = (position.x / CELL_WIDTH) as usize;
+                            let line = (position.y / CELL_HEIGHT) as usize;
+
+                            let mut emulator = self.emulator.clone();
+                            emulator.on_mouse_drag(col, line);
+                            self.cache.clear();
+                            return Some(iced::widget::canvas::Action::request_redraw());
+                        }
+                    }
+                }
+                mouse::Event::ButtonReleased(mouse::Button::Left) => {
+                    if state.is_dragging {
+                        let mut emulator = self.emulator.clone();
+                        emulator.on_mouse_release();
+                        state.is_dragging = false;
+                        self.cache.clear();
+                        return Some(iced::widget::canvas::Action::request_redraw());
+                    }
+                }
+                _ => {}
+            }
+        }
         None
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &Self::State,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
+        if cursor.is_over(bounds) {
+            mouse::Interaction::Text
+        } else {
+            mouse::Interaction::default()
+        }
     }
 
     fn draw(
@@ -67,9 +161,17 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 Color::from_rgba8(0, 0, 0, 0.3), // Semi-transparent cursor
             );
 
-            self.emulator.render_grid(|col, line, c, fg| {
+            self.emulator.render_grid(|col, line, c, fg, is_selected| {
                 let x = col as f32 * cell_width;
                 let y = line as f32 * cell_height;
+
+                if is_selected {
+                    frame.fill_rectangle(
+                        Point::new(x, y),
+                        Size::new(cell_width, cell_height),
+                        Color::from_rgba8(100, 100, 200, 0.5), // Darker selection color
+                    );
+                }
 
                 let color = convert_color(fg);
 
@@ -83,48 +185,27 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 });
             });
 
-            // Draw Scrollbar
+            // Draw Scrollbar (unchanged logic)
             let (total_lines, display_offset, screen_lines) = self.emulator.get_scroll_state();
             if total_lines > screen_lines {
                 let scrollbar_width = 10.0;
                 let track_x = bounds.width - scrollbar_width;
                 let track_height = bounds.height;
-
-                // Viewport position in history:
-                // display_offset = 0 means bottom (end of history)
-                // display_offset = total_lines - screen_lines means top
-                //
-                // We want:
-                // Top of scrollbar = top of viewport
-
-                // Let's visualize:
-                // total_lines = 1000, screen_lines = 24.
-                // display_offset = 0 (bottom). Viewport is [976..1000]. Scrollbar should be at bottom.
-                // display_offset = 976 (top). Viewport is [0..24]. Scrollbar should be at top.
-
                 let max_offset = total_lines.saturating_sub(screen_lines);
                 let scroll_fraction = if max_offset > 0 {
                     1.0 - (display_offset as f32 / max_offset as f32)
                 } else {
                     1.0
                 };
-
-                // Thumb height proportional to view size
-                let thumb_fraction = (screen_lines as f32 / total_lines as f32).max(0.05); // Min 5% height
+                let thumb_fraction = (screen_lines as f32 / total_lines as f32).max(0.05);
                 let thumb_height = track_height * thumb_fraction;
+                let thumb_y = available_track(track_height, thumb_height) * scroll_fraction;
 
-                // Track ranges from 0 to (track_height - thumb_height)
-                let available_track = track_height - thumb_height;
-                let thumb_y = available_track * scroll_fraction;
-
-                // Draw Track Background (optional, maybe just transparent)
                 frame.fill_rectangle(
                     Point::new(track_x, 0.0),
                     Size::new(scrollbar_width, track_height),
                     Color::from_rgba8(200, 200, 200, 0.2),
                 );
-
-                // Draw Thumb
                 frame.fill_rectangle(
                     Point::new(track_x, thumb_y),
                     Size::new(scrollbar_width, thumb_height),
@@ -135,6 +216,11 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
 
         vec![geometry]
     }
+}
+
+// Helper to avoid lifetime issues in closure
+fn available_track(track_h: f32, thumb_h: f32) -> f32 {
+    track_h - thumb_h
 }
 
 fn convert_color(color: alacritty_terminal::vte::ansi::Color) -> Color {

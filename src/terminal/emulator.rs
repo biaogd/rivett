@@ -22,6 +22,7 @@ pub struct TerminalEmulator {
     term: Arc<Mutex<Term<VoidListener>>>,
     parser: Arc<Mutex<ansi::Processor>>,
     scroll_accumulator: Arc<Mutex<f32>>,
+    selection_start: Option<alacritty_terminal::index::Point>,
 }
 
 impl fmt::Debug for TerminalEmulator {
@@ -70,6 +71,7 @@ impl TerminalEmulator {
             term: Arc::new(Mutex::new(term)),
             parser: Arc::new(Mutex::new(ansi::Processor::new())),
             scroll_accumulator: Arc::new(Mutex::new(0.0)),
+            selection_start: None,
         }
     }
 
@@ -104,7 +106,7 @@ impl TerminalEmulator {
 
     pub fn render_grid<F>(&self, mut func: F)
     where
-        F: FnMut(usize, usize, char, alacritty_terminal::vte::ansi::Color),
+        F: FnMut(usize, usize, char, alacritty_terminal::vte::ansi::Color, bool),
     {
         let term = self.term.lock();
         let content = term.renderable_content();
@@ -112,6 +114,8 @@ impl TerminalEmulator {
         let cols = grid.columns();
         let rows = grid.screen_lines();
         let display_offset = grid.display_offset();
+        // TERM.selection is a field
+        let selection = &term.selection; // Changed from term.selection()
 
         for item in content.display_iter {
             let cell = item.cell;
@@ -129,7 +133,13 @@ impl TerminalEmulator {
             let col = col_raw;
 
             if line >= 0 && line < rows as isize && col >= 0 && col < cols as isize {
-                func(col as usize, line as usize, c, fg);
+                // Attempt to use to_range which is common in older alacritty versions
+                let is_selected = selection
+                    .as_ref()
+                    .and_then(|s| s.to_range(&*term))
+                    .map(|range| range.contains(item.point))
+                    .unwrap_or(false);
+                func(col as usize, line as usize, c, fg, is_selected);
             }
         }
     }
@@ -157,6 +167,71 @@ impl TerminalEmulator {
         let display_offset = grid.display_offset();
 
         (total_lines, display_offset, screen_lines)
+    }
+
+    pub fn copy_selection(&self) -> Option<String> {
+        let term = self.term.lock();
+        term.selection_to_string()
+    }
+
+    pub fn on_mouse_double_click(&mut self, col: usize, line: usize) {
+        use alacritty_terminal::index::Side;
+        use alacritty_terminal::selection::{Selection, SelectionType};
+
+        let mut term = self.term.lock();
+        let point = self.viewport_to_point(&term, col, line);
+        let side = Side::Left; // Default side
+        term.selection = Some(Selection::new(SelectionType::Semantic, point, side));
+        self.selection_start = None; // Reset start point to avoid conflict with drag
+    }
+
+    pub fn on_mouse_press(&mut self, col: usize, line: usize) {
+        let mut term = self.term.lock();
+        let point = self.viewport_to_point(&term, col, line);
+
+        // Clear existing selection on press
+        term.selection = None;
+        self.selection_start = Some(point);
+    }
+
+    pub fn on_mouse_drag(&mut self, col: usize, line: usize) {
+        use alacritty_terminal::index::Side;
+        use alacritty_terminal::selection::{Selection, SelectionType};
+
+        let mut term = self.term.lock();
+        let point = self.viewport_to_point(&term, col, line);
+
+        // If no selection exists but we have a start point, create it now (on drag)
+        if term.selection.is_none() {
+            if let Some(start) = self.selection_start {
+                term.selection = Some(Selection::new(SelectionType::Simple, start, Side::Left));
+            }
+        }
+
+        if let Some(selection) = term.selection.as_mut() {
+            selection.update(point, Side::Right);
+        }
+    }
+
+    pub fn on_mouse_release(&mut self) {
+        self.selection_start = None;
+    }
+
+    fn viewport_to_point(
+        &self,
+        term: &Term<VoidListener>,
+        col: usize,
+        line: usize,
+    ) -> alacritty_terminal::index::Point {
+        let grid = term.grid();
+        let display_offset = grid.display_offset();
+
+        let grid_line = (line as i32) - (display_offset as i32);
+
+        alacritty_terminal::index::Point::new(
+            alacritty_terminal::index::Line(grid_line),
+            alacritty_terminal::index::Column(col),
+        )
     }
 }
 

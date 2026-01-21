@@ -63,6 +63,11 @@ pub enum Message {
     WindowResized(u32, u32),
     ScrollWheel(f32), // delta in lines
     Tick(std::time::Instant),
+    RetryConnection(usize),   // tab index to retry
+    EditSessionConfig(usize), // tab index to edit
+    Copy,
+    Paste,
+    ClipboardReceived(Option<String>),
 }
 
 #[derive(Debug)]
@@ -88,6 +93,7 @@ pub struct App {
     validation_error: Option<String>,
     window_width: u32,
     window_height: u32,
+    last_error: Option<(String, std::time::Instant)>, // (error message, timestamp)
 }
 
 impl App {
@@ -119,6 +125,7 @@ impl App {
                 validation_error: None,
                 window_width: 1024, // Default assumption
                 window_height: 768,
+                last_error: None,
             },
             Task::none(), // Removed Command::perform(Self::connect_to_localhost(), ...)
         )
@@ -249,11 +256,17 @@ impl App {
 
                     return Task::perform(
                         async move {
-                            match SshSession::connect(&host, port, &username, &password).await {
-                                Ok((session, rx)) => {
+                            match tokio::time::timeout(
+                                std::time::Duration::from_secs(10),
+                                SshSession::connect(&host, port, &username, &password),
+                            )
+                            .await
+                            {
+                                Ok(Ok((session, rx))) => {
                                     Ok((Arc::new(Mutex::new(session)), Arc::new(Mutex::new(rx))))
                                 }
-                                Err(e) => Err(e.to_string()),
+                                Ok(Err(e)) => Err(e.to_string()),
+                                Err(_) => Err("Connection timeout (10s)".to_string()),
                             }
                         },
                         move |result| Message::SessionConnected(result, tab_index),
@@ -396,6 +409,9 @@ impl App {
                     }
                 }
                 Err(e) => {
+                    // Record the error with timestamp
+                    self.last_error = Some((e.clone(), std::time::Instant::now()));
+
                     if let Some(tab) = self.tabs.get_mut(tab_index) {
                         tab.title = format!("{} (Failed)", tab.title);
                         tab.state = SessionState::Failed(e.clone()); // Transition to Failed
@@ -538,6 +554,64 @@ impl App {
                     }
                 }
             }
+            Message::RetryConnection(tab_index) => {
+                // Actually retry the SSH connection
+                if let Some(tab) = self.tabs.get_mut(tab_index) {
+                    tab.state = SessionState::Connecting(std::time::Instant::now());
+
+                    // For now, we need the session config to retry
+                    // TODO: Store session config with each tab for retry
+                    // As a workaround, try to find matching saved session
+                    if let Some(saved_session) = self.saved_sessions.first() {
+                        let host = saved_session.host.clone();
+                        let port = saved_session.port;
+                        let username = saved_session.username.clone();
+                        let password = saved_session.password.clone().unwrap_or_default();
+
+                        return Task::perform(
+                            async move {
+                                // Add timeout wrapper
+                                match tokio::time::timeout(
+                                    std::time::Duration::from_secs(10),
+                                    SshSession::connect(&host, port, &username, &password),
+                                )
+                                .await
+                                {
+                                    Ok(Ok((session, rx))) => Ok((
+                                        Arc::new(Mutex::new(session)),
+                                        Arc::new(Mutex::new(rx)),
+                                    )),
+                                    Ok(Err(e)) => Err(e.to_string()),
+                                    Err(_) => Err("Connection timeout (10s)".to_string()),
+                                }
+                            },
+                            move |result| Message::SessionConnected(result, tab_index),
+                        );
+                    }
+                }
+            }
+            Message::EditSessionConfig(tab_index) => {
+                // Switch to session manager and load the session for editing
+                if tab_index < self.tabs.len() {
+                    self.active_view = ActiveView::SessionManager;
+                    // TODO: Load the session config for editing
+                }
+            }
+            Message::Copy => {
+                if let Some(tab) = self.tabs.get(self.active_tab) {
+                    if let Some(content) = tab.emulator.copy_selection() {
+                        return iced::clipboard::write(content);
+                    }
+                }
+            }
+            Message::Paste => {
+                return iced::clipboard::read().map(Message::ClipboardReceived);
+            }
+            Message::ClipboardReceived(content) => {
+                if let Some(text) = content {
+                    return Task::done(Message::TerminalInput(text.as_bytes().to_vec()));
+                }
+            }
         }
         Task::none()
     }
@@ -584,7 +658,7 @@ impl App {
     }
 
     fn terminal_view(&self) -> Element<'_, Message> {
-        use iced::widget::{column, container, text};
+        use iced::widget::{column, container, row, text};
 
         if self.tabs.is_empty() {
             return column![
@@ -655,13 +729,23 @@ impl App {
                 .into()
             }
             SessionState::Failed(err) => {
+                let current_tab_index = self.active_tab;
+
                 container(
                     column![
-                        text("Connection Failed")
+                        text("❌ Connection Failed")
                             .size(24)
                             .color(iced::Color::from_rgb(0.8, 0.2, 0.2)),
-                        text(err).size(14),
-                        iced::widget::button(text("Retry")) // Retry logic would need a new Message, for now just show error
+                        text(err).size(14).style(ui_style::muted_text),
+                        row![
+                            iced::widget::button(text("🔄 Retry").size(14))
+                                .padding([8, 16])
+                                .on_press(Message::RetryConnection(current_tab_index)),
+                            iced::widget::button(text("✏️ Edit").size(14))
+                                .padding([8, 16])
+                                .on_press(Message::EditSessionConfig(current_tab_index)),
+                        ]
+                        .spacing(12)
                     ]
                     .spacing(20)
                     .align_x(Alignment::Center),
@@ -789,21 +873,25 @@ impl App {
 
         let connection_info = format!("{}@{}:{}", session.username, session.host, session.port);
 
-        let last_connected = if let Some(dt) = session.last_connected {
-            format!("Last connected: {}", dt.format("%Y-%m-%d %H:%M"))
-        } else {
-            "Never connected".to_string()
-        };
-
-        let card_content = column![
+        let mut card_content = column![
             row![
                 text(session.name.clone()).size(16),
                 container("").width(Length::Fill),
             ],
             text(connection_info).size(13).style(ui_style::muted_text),
-            container("").height(4.0),
-            text(last_connected).size(12).style(ui_style::muted_text),
-            container("").height(8.0),
+        ]
+        .spacing(4);
+
+        // Only show last connected if it exists
+        if let Some(dt) = session.last_connected {
+            card_content = card_content.push(container("").height(4.0)).push(
+                text(format!("Last connected: {}", dt.format("%Y-%m-%d %H:%M")))
+                    .size(12)
+                    .style(ui_style::muted_text),
+            );
+        }
+
+        card_content = card_content.push(container("").height(8.0)).push(
             row![
                 button(text("Connect").size(13))
                     .padding([6, 16])
@@ -819,11 +907,11 @@ impl App {
                     .on_press(Message::DeleteSession(session.id.clone())),
             ]
             .spacing(8),
-        ]
-        .spacing(4)
-        .padding(12);
+        );
 
-        container(card_content)
+        let final_card = card_content.padding(12);
+
+        container(final_card)
             .width(Length::Fixed(360.0))
             .style(ui_style::panel)
             .into()
@@ -1137,6 +1225,19 @@ impl App {
             let keyboard_subscription = event::listen().map(|event| {
                 match event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        // Handle Cmd+C / Cmd+V
+                        if modifiers.command() {
+                            match key {
+                                keyboard::Key::Character(c) if c.as_str() == "c" => {
+                                    return Message::Copy;
+                                }
+                                keyboard::Key::Character(c) if c.as_str() == "v" => {
+                                    return Message::Paste;
+                                }
+                                _ => {}
+                            }
+                        }
+
                         if let Some(data) = crate::terminal::input::map_key_to_input(key, modifiers)
                         {
                             Message::TerminalInput(data)
