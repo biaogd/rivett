@@ -28,10 +28,11 @@ pub fn render<'a>(tabs: &'a [SessionTab], active_tab: usize) -> Element<'a, Mess
         .into();
     }
 
-    let (current_tab_cache, current_emulator, current_tab_state, _current_spinner_cache) =
+    let (current_chrome_cache, current_line_caches, current_emulator, current_tab_state, _current_spinner_cache) =
         if let Some(tab) = tabs.get(active_tab) {
             (
-                &tab.cache,
+                &tab.chrome_cache,
+                &tab.line_caches,
                 tab.emulator.clone(),
                 &tab.state,
                 &tab.spinner_cache,
@@ -39,7 +40,8 @@ pub fn render<'a>(tabs: &'a [SessionTab], active_tab: usize) -> Element<'a, Mess
         } else {
             // Should be covered by is_empty check, but safe fallback
             (
-                &tabs[0].cache,
+                &tabs[0].chrome_cache,
+                &tabs[0].line_caches,
                 tabs[0].emulator.clone(),
                 &tabs[0].state,
                 &tabs[0].spinner_cache,
@@ -101,7 +103,11 @@ pub fn render<'a>(tabs: &'a [SessionTab], active_tab: usize) -> Element<'a, Mess
             let _rows = (size.height / terminal_widget::CELL_HEIGHT) as usize;
 
             container(
-                terminal_widget::TerminalView::new(current_emulator.clone(), current_tab_cache)
+                terminal_widget::TerminalView::new(
+                    current_emulator.clone(),
+                    current_chrome_cache,
+                    current_line_caches,
+                )
                     .view(),
             )
             .width(Length::Fill)

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use crate::terminal::TerminalDamage;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActiveView {
@@ -54,6 +55,7 @@ pub enum Message {
     ),
     ShellOpened(Result<russh::ChannelId, String>, usize),
     TerminalDataReceived(usize, Vec<u8>),
+    TerminalDamaged(usize, TerminalDamage),
     TerminalInput(Vec<u8>),
     // Terminal Mouse Events
     TerminalMousePress(usize, usize),

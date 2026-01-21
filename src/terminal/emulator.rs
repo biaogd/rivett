@@ -1,6 +1,6 @@
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::term::{Config, Term};
+use alacritty_terminal::term::{Config, Term, TermDamage};
 use alacritty_terminal::vte::ansi;
 use parking_lot::Mutex;
 use std::fmt;
@@ -39,6 +39,12 @@ pub struct TerminalEmulator {
     selection_start: Option<alacritty_terminal::index::Point>,
     /// Receiver for terminal output responses (like CPR)
     output_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<Vec<u8>>>>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TerminalDamage {
+    Full,
+    Partial(Vec<usize>), // screen line indices
 }
 
 impl fmt::Debug for TerminalEmulator {
@@ -165,6 +171,61 @@ impl TerminalEmulator {
                 func(col as usize, line as usize, c, fg, is_selected);
             }
         }
+    }
+
+    pub fn render_line<F>(&self, line: usize, mut func: F)
+    where
+        F: FnMut(usize, usize, char, alacritty_terminal::vte::ansi::Color, bool),
+    {
+        use alacritty_terminal::index::{Column, Line, Point};
+
+        let term = self.term.lock();
+        let grid = term.grid();
+        let cols = grid.columns();
+        let rows = grid.screen_lines();
+        let display_offset = grid.display_offset();
+        let selection = term.selection.as_ref().and_then(|s| s.to_range(&*term));
+
+        if line >= rows {
+            return;
+        }
+
+        let grid_line = Line::from(line) - display_offset;
+        let row = &grid[grid_line];
+
+        for col in 0..cols {
+            let cell = &row[Column(col)];
+            let point = Point::new(grid_line, Column(col));
+            let is_selected = selection
+                .map(|range| range.contains(point))
+                .unwrap_or(false);
+            func(col, line, cell.c, cell.fg, is_selected);
+        }
+    }
+
+    pub fn take_damage(&self) -> TerminalDamage {
+        let mut term = self.term.lock();
+        let display_offset = term.grid().display_offset();
+        let screen_lines = term.grid().screen_lines();
+
+        let damage = match term.damage() {
+            TermDamage::Full => TerminalDamage::Full,
+            TermDamage::Partial(lines) => {
+                let mut damaged = Vec::new();
+                for line in lines {
+                    if line.line >= display_offset {
+                        let screen_line = line.line - display_offset;
+                        if screen_line < screen_lines {
+                            damaged.push(screen_line);
+                        }
+                    }
+                }
+                TerminalDamage::Partial(damaged)
+            }
+        };
+
+        term.reset_damage();
+        damage
     }
 
     pub fn cursor_position(&self) -> (usize, usize) {

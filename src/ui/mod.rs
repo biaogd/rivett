@@ -595,48 +595,64 @@ impl App {
                 }
             },
             Message::TerminalDataReceived(tab_index, data) => {
-                // Update the specific tab's emulator
                 if let Some(tab) = self.tabs.get_mut(tab_index) {
-                    tab.emulator.process_input(&data);
-                    // Throttled rendering: Mark dirty, allow Tick to clear cache
-                    tab.is_dirty = true;
-                    tab.last_data_received = std::time::Instant::now();
-
-                    // Continue reading is now handled by Subscription
                     if data.is_empty() {
-                        // Optional: Handle stream end if needed, though Subscription handles the loop
-                        // println!("Stream possibly ended or empty chunk for tab {}", tab_index);
                         tab.state = SessionState::Disconnected;
+                        return Task::none();
+                    }
+
+                    if let Some(tx) = &tab.parser_tx {
+                        let _ = tx.send(data);
+                    } else {
+                        tab.emulator.process_input(&data);
+                        tab.mark_full_damage();
+                    }
+                }
+            }
+            Message::TerminalDamaged(tab_index, damage) => {
+                if let Some(tab) = self.tabs.get_mut(tab_index) {
+                    match damage {
+                        crate::terminal::TerminalDamage::Full => {
+                            tab.pending_damage_full = true;
+                            tab.pending_damage_lines.clear();
+                            tab.is_dirty = true;
+                            tab.last_data_received = std::time::Instant::now();
+                        }
+                        crate::terminal::TerminalDamage::Partial(lines) => {
+                            tab.add_damage_lines(&lines);
+                        }
                     }
                 }
             }
             Message::TerminalMousePress(col, line) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.emulator.on_mouse_press(col, line);
-                    tab.cache.clear();
+                    tab.mark_full_damage();
                 }
             }
             Message::TerminalMouseDrag(col, line) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.emulator.on_mouse_drag(col, line);
-                    tab.cache.clear();
+                    tab.mark_full_damage();
                 }
             }
             Message::TerminalMouseRelease => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.emulator.on_mouse_release();
-                    tab.cache.clear();
+                    tab.mark_full_damage();
                 }
             }
             Message::TerminalMouseDoubleClick(col, line) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.emulator.on_mouse_double_click(col, line);
-                    tab.cache.clear();
+                    tab.mark_full_damage();
                 }
             }
             Message::TerminalResize(cols, rows) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.emulator.resize(cols, rows);
+                    tab.ensure_line_caches(rows);
+                    tab.mark_full_damage();
 
                     // Resize session (SSH or Local)
                     if let Some(session) = &tab.session {
@@ -673,7 +689,7 @@ impl App {
                     if delta.abs() > 0.001 {
                         let clamped_delta = delta.clamp(-100.0, 100.0);
                         tab.emulator.scroll(clamped_delta);
-                        tab.cache.clear();
+                        tab.mark_full_damage();
                     }
                 }
             }
@@ -741,7 +757,22 @@ impl App {
                             > std::time::Duration::from_millis(16);
 
                         if stable_enough || force_update {
-                            tab.cache.clear();
+                            tab.chrome_cache.clear();
+                            if tab.pending_damage_full {
+                                for cache in &mut tab.line_caches {
+                                    cache.clear();
+                                }
+                            } else {
+                                tab.pending_damage_lines.sort_unstable();
+                                tab.pending_damage_lines.dedup();
+                                for &line in &tab.pending_damage_lines {
+                                    if let Some(cache) = tab.line_caches.get_mut(line) {
+                                        cache.clear();
+                                    }
+                                }
+                            }
+                            tab.pending_damage_full = false;
+                            tab.pending_damage_lines.clear();
                             tab.is_dirty = false;
                             tab.last_redraw_time = now;
                         }
@@ -962,8 +993,8 @@ impl App {
 
         let mut subs = Vec::new();
 
-        // Add Tick subscription for render throttling (approx 100 FPS check rate)
-        subs.push(iced::time::every(std::time::Duration::from_millis(10)).map(Message::Tick));
+        // Add Tick subscription for render throttling (approx 60 FPS check rate)
+        subs.push(iced::time::every(std::time::Duration::from_millis(16)).map(Message::Tick));
 
         if self.active_view == ActiveView::Terminal {
             let keyboard_subscription = event::listen().map(|event| {
@@ -1055,11 +1086,86 @@ impl App {
                                     '_,
                                     tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
                                 > = rx.lock().await;
-                                guard.recv().await
+
+                                if let Some(first_chunk) = guard.recv().await {
+                                    let mut batch = first_chunk;
+                                    let mut count = 0;
+                                    // Drain up to 100 pending chunks to batch them
+                                    while count < 100 {
+                                        match guard.try_recv() {
+                                            Ok(chunk) => {
+                                                batch.extend(chunk);
+                                                count += 1;
+                                            }
+                                            Err(_) => break,
+                                        }
+                                    }
+                                    Some(batch)
+                                } else {
+                                    None
+                                }
                             };
 
                             match result {
                                 Some(data) => Some((Message::TerminalDataReceived(idx, data), rx)),
+                                None => {
+                                    std::future::pending::<()>().await;
+                                    None
+                                }
+                            }
+                        })
+                    },
+                ));
+            }
+        }
+
+        // Add damage subscriptions
+        struct HashableDamageRx(
+            Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::terminal::TerminalDamage>>>,
+            usize,
+        );
+
+        impl std::hash::Hash for HashableDamageRx {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                (Arc::as_ptr(&self.0) as usize).hash(state);
+                self.1.hash(state);
+            }
+        }
+        impl PartialEq for HashableDamageRx {
+            fn eq(&self, other: &Self) -> bool {
+                Arc::ptr_eq(&self.0, &other.0) && self.1 == other.1
+            }
+        }
+        impl Eq for HashableDamageRx {}
+        impl Clone for HashableDamageRx {
+            fn clone(&self) -> Self {
+                Self(self.0.clone(), self.1)
+            }
+        }
+
+        for (i, tab) in self.tabs.iter().enumerate() {
+            if let Some(rx) = &tab.damage_rx {
+                let rx = rx.clone();
+                subs.push(iced::Subscription::run_with(
+                    HashableDamageRx(rx, i),
+                    |HashableDamageRx(rx, idx)| {
+                        let rx = rx.clone();
+                        let idx = *idx;
+                        iced::futures::stream::unfold(rx, move |rx| async move {
+                            let result = {
+                                let mut guard: tokio::sync::MutexGuard<
+                                    '_,
+                                    tokio::sync::mpsc::UnboundedReceiver<
+                                        crate::terminal::TerminalDamage,
+                                    >,
+                                > = rx.lock().await;
+                                guard.recv().await
+                            };
+
+                            match result {
+                                Some(damage) => {
+                                    Some((Message::TerminalDamaged(idx, damage), rx))
+                                }
                                 None => {
                                     std::future::pending::<()>().await;
                                     None

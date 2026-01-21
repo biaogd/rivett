@@ -1,8 +1,9 @@
 use crate::core::session::Session;
-use crate::terminal::TerminalEmulator;
+use crate::terminal::{TerminalDamage, TerminalEmulator};
 use iced::widget::canvas::Cache;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use std::sync::mpsc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionState {
@@ -15,7 +16,8 @@ pub enum SessionState {
 #[derive(Debug)]
 pub struct SessionTab {
     pub title: String,
-    pub cache: Cache,
+    pub chrome_cache: Cache,
+    pub line_caches: Vec<Cache>,
     pub state: SessionState,
     pub spinner_cache: Cache, // Cache for spinner drawing
     // Session (abstracted)
@@ -24,44 +26,116 @@ pub struct SessionTab {
     pub ssh_handle: Option<Arc<Mutex<crate::ssh::SshSession>>>,
     pub rx: Option<Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>>>,
     pub emulator: TerminalEmulator,
+    pub parser_tx: Option<mpsc::Sender<Vec<u8>>>,
+    pub damage_rx: Option<Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<TerminalDamage>>>>,
     pub is_dirty: bool,
     pub last_data_received: std::time::Instant,
     pub last_redraw_time: std::time::Instant,
+    pub pending_damage_full: bool,
+    pub pending_damage_lines: Vec<usize>,
 }
 
 impl Clone for SessionTab {
     fn clone(&self) -> Self {
         Self {
             title: self.title.clone(),
-            cache: iced::widget::canvas::Cache::new(),
+            chrome_cache: iced::widget::canvas::Cache::new(),
+            line_caches: Vec::new(),
             state: self.state.clone(),
             spinner_cache: iced::widget::canvas::Cache::new(),
             session: self.session.clone(),
             ssh_handle: self.ssh_handle.clone(),
             rx: self.rx.clone(),
             emulator: self.emulator.clone(),
+            parser_tx: None,
+            damage_rx: None,
             is_dirty: self.is_dirty,
             last_data_received: self.last_data_received,
             last_redraw_time: self.last_redraw_time,
+            pending_damage_full: self.pending_damage_full,
+            pending_damage_lines: self.pending_damage_lines.clone(),
         }
     }
 }
 
 impl SessionTab {
     pub fn new(title: &str) -> Self {
+        let emulator = TerminalEmulator::new();
+        let screen_lines = emulator.get_scroll_state().2;
+        let (parser_tx, parser_rx) = mpsc::channel::<Vec<u8>>();
+        let (damage_tx, damage_rx) = tokio::sync::mpsc::unbounded_channel::<TerminalDamage>();
+        let mut line_caches = Vec::with_capacity(screen_lines);
+        for _ in 0..screen_lines {
+            line_caches.push(Cache::default());
+        }
+
+        let mut emulator_clone = emulator.clone();
+        std::thread::spawn(move || {
+            while let Ok(mut data) = parser_rx.recv() {
+                let mut drain_count = 0;
+                while drain_count < 100 {
+                    match parser_rx.try_recv() {
+                        Ok(chunk) => {
+                            data.extend(chunk);
+                            drain_count += 1;
+                        }
+                        Err(_) => break,
+                    }
+                }
+
+                emulator_clone.process_input(&data);
+                let damage = emulator_clone.take_damage();
+                if damage_tx.send(damage).is_err() {
+                    break;
+                }
+            }
+        });
+
         Self {
             title: title.to_string(),
-            cache: Cache::default(),
+            chrome_cache: Cache::default(),
+            line_caches,
             state: SessionState::Connecting(std::time::Instant::now()),
             spinner_cache: Cache::default(),
             session: None,
             ssh_handle: None,
             rx: None,
-            emulator: TerminalEmulator::new(),
+            emulator,
+            parser_tx: Some(parser_tx),
+            damage_rx: Some(Arc::new(Mutex::new(damage_rx))),
             is_dirty: false,
             last_data_received: std::time::Instant::now(),
             last_redraw_time: std::time::Instant::now(),
+            pending_damage_full: true,
+            pending_damage_lines: Vec::new(),
         }
+    }
+
+    pub fn ensure_line_caches(&mut self, rows: usize) {
+        if self.line_caches.len() != rows {
+            let mut line_caches = Vec::with_capacity(rows);
+            for _ in 0..rows {
+                line_caches.push(Cache::default());
+            }
+            self.line_caches = line_caches;
+            self.pending_damage_full = true;
+        }
+    }
+
+    pub fn mark_full_damage(&mut self) {
+        self.pending_damage_full = true;
+        self.pending_damage_lines.clear();
+        self.is_dirty = true;
+        self.last_data_received = std::time::Instant::now();
+    }
+
+    pub fn add_damage_lines(&mut self, lines: &[usize]) {
+        if lines.is_empty() {
+            return;
+        }
+        self.pending_damage_lines.extend_from_slice(lines);
+        self.is_dirty = true;
+        self.last_data_received = std::time::Instant::now();
     }
 }
 

@@ -10,12 +10,17 @@ pub const CELL_HEIGHT: f32 = 16.0;
 
 pub struct TerminalView<'a> {
     emulator: TerminalEmulator,
-    cache: &'a Cache,
+    chrome_cache: &'a Cache,
+    line_caches: &'a [Cache],
 }
 
 impl<'a> TerminalView<'a> {
-    pub fn new(emulator: TerminalEmulator, cache: &'a Cache) -> Self {
-        Self { emulator, cache }
+    pub fn new(emulator: TerminalEmulator, chrome_cache: &'a Cache, line_caches: &'a [Cache]) -> Self {
+        Self {
+            emulator,
+            chrome_cache,
+            line_caches,
+        }
     }
 
     pub fn view(self) -> Element<'a, Message> {
@@ -151,49 +156,13 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let geometry = self.cache.draw(renderer, bounds.size(), |frame| {
+        let mut geometries = Vec::new();
+
+        let chrome = self.chrome_cache.draw(renderer, bounds.size(), |frame| {
             // Fill background
             frame.fill_rectangle(Point::ORIGIN, bounds.size(), Color::WHITE);
 
-            let cell_width = CELL_WIDTH;
-            let cell_height = CELL_HEIGHT;
-
-            // Draw Cursor
-            let (cursor_col, cursor_row) = self.emulator.cursor_position();
-            let cursor_x = cursor_col as f32 * cell_width;
-            let cursor_y = cursor_row as f32 * cell_height;
-
-            frame.fill_rectangle(
-                Point::new(cursor_x, cursor_y),
-                Size::new(cell_width, cell_height),
-                Color::from_rgba8(0, 0, 0, 0.3), // Semi-transparent cursor
-            );
-
-            self.emulator.render_grid(|col, line, c, fg, is_selected| {
-                let x = col as f32 * cell_width;
-                let y = line as f32 * cell_height;
-
-                if is_selected {
-                    frame.fill_rectangle(
-                        Point::new(x, y),
-                        Size::new(cell_width, cell_height),
-                        Color::from_rgba8(100, 100, 200, 0.5), // Darker selection color
-                    );
-                }
-
-                let color = convert_color(fg);
-
-                frame.fill_text(Text {
-                    content: c.to_string(),
-                    position: Point::new(x, y),
-                    color,
-                    size: 12.0.into(),
-                    font: iced::Font::MONOSPACE,
-                    ..Text::default()
-                });
-            });
-
-            // Draw Scrollbar (unchanged logic)
+            // Draw Scrollbar
             let (total_lines, display_offset, screen_lines) = self.emulator.get_scroll_state();
             if total_lines > screen_lines {
                 let scrollbar_width = 10.0;
@@ -220,9 +189,105 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                     Color::from_rgba8(100, 100, 100, 0.5),
                 );
             }
-        });
 
-        vec![geometry]
+            // FPS Counter
+            use std::sync::Mutex;
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            use std::time::Instant;
+
+            static FRAME_COUNT: AtomicUsize = AtomicUsize::new(0);
+            static LAST_SECOND: std::sync::OnceLock<Mutex<Instant>> = std::sync::OnceLock::new();
+
+            let last_second_mutex = LAST_SECOND.get_or_init(|| Mutex::new(Instant::now()));
+            let mut last_second = last_second_mutex.lock().unwrap();
+
+            FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
+
+            if last_second.elapsed().as_secs() >= 1 {
+                let count = FRAME_COUNT.swap(0, Ordering::Relaxed);
+                println!("FPS: {}", count);
+                *last_second = Instant::now();
+            }
+        });
+        geometries.push(chrome);
+
+        let cell_width = CELL_WIDTH;
+        let cell_height = CELL_HEIGHT;
+        let (cursor_col, cursor_row) = self.emulator.cursor_position();
+        let (_, _, screen_lines) = self.emulator.get_scroll_state();
+        let visible_lines = screen_lines.min(self.line_caches.len());
+
+        for line in 0..visible_lines {
+            let cache = &self.line_caches[line];
+            let geometry = cache.draw(renderer, bounds.size(), |frame| {
+                // Draw Cursor (per line to avoid full redraw)
+                if line == cursor_row {
+                    let cursor_x = cursor_col as f32 * cell_width;
+                    let cursor_y = cursor_row as f32 * cell_height;
+                    frame.fill_rectangle(
+                        Point::new(cursor_x, cursor_y),
+                        Size::new(cell_width, cell_height),
+                        Color::from_rgba8(0, 0, 0, 0.3),
+                    );
+                }
+
+                // --- Batched Text Rendering (per line) ---
+                let mut current_text = String::new();
+                let mut current_fg = Color::BLACK;
+                let mut start_pos = Point::ORIGIN;
+                let mut last_col = -1;
+
+                self.emulator.render_line(line, |col, _line, c, fg, is_selected| {
+                    let x = col as f32 * cell_width;
+                    let y = line as f32 * cell_height;
+                    let color = convert_color(fg);
+
+                    if is_selected {
+                        frame.fill_rectangle(
+                            Point::new(x, y),
+                            Size::new(cell_width, cell_height),
+                            Color::from_rgba8(100, 100, 200, 0.5),
+                        );
+                    }
+
+                    let break_span = color != current_fg || col as i32 != last_col + 1;
+                    if break_span && !current_text.is_empty() {
+                        frame.fill_text(Text {
+                            content: current_text.clone(),
+                            position: start_pos,
+                            color: current_fg,
+                            size: 12.0.into(),
+                            font: iced::Font::MONOSPACE,
+                            ..Text::default()
+                        });
+                        current_text.clear();
+                    }
+
+                    if current_text.is_empty() {
+                        start_pos = Point::new(x, y);
+                        current_fg = color;
+                    }
+
+                    current_text.push(c);
+                    last_col = col as i32;
+                });
+
+                if !current_text.is_empty() {
+                    frame.fill_text(Text {
+                        content: current_text,
+                        position: start_pos,
+                        color: current_fg,
+                        size: 12.0.into(),
+                        font: iced::Font::MONOSPACE,
+                        ..Text::default()
+                    });
+                }
+            });
+
+            geometries.push(geometry);
+        }
+
+        geometries
     }
 }
 
