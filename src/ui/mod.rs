@@ -31,6 +31,10 @@ pub enum Message {
     ShowSftp,
     ShowPortForwarding,
     ShowSettings,
+    // Quick Connect
+    ToggleQuickConnect,
+    QuickConnectQueryChanged(String),
+    SelectQuickConnectSession(String), // Session Name
     // Session management
     CreateNewSession,
     EditSession(String),
@@ -76,6 +80,7 @@ pub enum Message {
     Copy,
     Paste,
     ClipboardReceived(Option<String>),
+    Ignore,
 }
 
 #[derive(Debug)]
@@ -102,6 +107,9 @@ pub struct App {
     window_width: u32,
     window_height: u32,
     last_error: Option<(String, std::time::Instant)>, // (error message, timestamp)
+    // Quick Connect
+    show_quick_connect: bool,
+    quick_connect_query: String,
 }
 
 impl App {
@@ -134,6 +142,8 @@ impl App {
                 window_width: 1024, // Default assumption
                 window_height: 768,
                 last_error: None,
+                show_quick_connect: false,
+                quick_connect_query: String::new(),
             },
             Task::none(), // Removed Command::perform(Self::connect_to_localhost(), ...)
         )
@@ -152,6 +162,7 @@ impl App {
 
         match message {
             Message::CreateLocalTab => {
+                self.show_quick_connect = false;
                 let system = native_pty_system();
                 // Create a generic PTY size
                 let size = PtySize {
@@ -295,6 +306,7 @@ impl App {
                 }
             }
             Message::ShowSessionManager => {
+                self.show_quick_connect = false;
                 self.show_menu = false;
                 self.active_view = ActiveView::SessionManager;
                 self.editing_session = None;
@@ -674,6 +686,19 @@ impl App {
                     }
                 }
             }
+            Message::ToggleQuickConnect => {
+                self.show_quick_connect = !self.show_quick_connect;
+                if self.show_quick_connect {
+                    self.quick_connect_query = String::new(); // Reset query on open
+                }
+            }
+            Message::QuickConnectQueryChanged(query) => {
+                self.quick_connect_query = query;
+            }
+            Message::SelectQuickConnectSession(name) => {
+                self.show_quick_connect = false;
+                return Task::perform(async move { name }, Message::ConnectToSession);
+            }
             Message::TerminalInput(data) => {
                 if !data.is_empty() {
                     println!("UI: Terminal Input: {} bytes", data.len());
@@ -769,12 +794,147 @@ impl App {
                     return Task::done(Message::TerminalInput(text.as_bytes().to_vec()));
                 }
             }
+            Message::Ignore => {}
         }
         Task::batch(commands)
     }
 
+    fn quick_connect_view(&self) -> Element<'_, Message> {
+        use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
+
+        // 1. Search Bar
+        let search_bar = text_input("Search sessions...", &self.quick_connect_query)
+            .on_input(Message::QuickConnectQueryChanged)
+            .padding(10)
+            .size(14)
+            .style(ui_style::search_input);
+
+        // 2. Remote Sessions List
+        let filtered_sessions: Vec<_> = self
+            .saved_sessions
+            .iter()
+            .filter(|s| {
+                self.quick_connect_query.is_empty()
+                    || s.name
+                        .to_lowercase()
+                        .contains(&self.quick_connect_query.to_lowercase())
+                    || s.host
+                        .to_lowercase()
+                        .contains(&self.quick_connect_query.to_lowercase())
+            })
+            .collect();
+
+        let sessions_list: Element<'_, Message> = if filtered_sessions.is_empty() {
+            container(
+                text("No matching sessions")
+                    .size(14)
+                    .style(ui_style::muted_text),
+            )
+            .padding(20)
+            .center_x(Length::Fill)
+            .into()
+        } else {
+            column(
+                filtered_sessions
+                    .iter()
+                    .map(|session| {
+                        button(
+                            row![
+                                text(">_")
+                                    .size(14)
+                                    .style(ui_style::muted_text)
+                                    .width(Length::Fixed(24.0)),
+                                column![
+                                    text(&session.name).size(14),
+                                    text(format!("{}:{}", session.host, session.port))
+                                        .size(12)
+                                        .style(ui_style::muted_text),
+                                ]
+                                .spacing(2),
+                            ]
+                            .align_y(Alignment::Center),
+                        )
+                        .width(Length::Fill)
+                        .padding(10)
+                        .style(ui_style::quick_connect_item)
+                        .on_press(Message::SelectQuickConnectSession(session.id.clone()))
+                        .into()
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .spacing(2)
+            .into()
+        };
+
+        let remote_section = column![
+            text("REMOTE SESSIONS")
+                .size(11)
+                .style(ui_style::quick_connect_section_header),
+            sessions_list
+        ]
+        .spacing(8);
+
+        // 3. Local System Section
+        let local_section = column![
+            text("LOCAL SYSTEM")
+                .size(11)
+                .style(ui_style::quick_connect_section_header),
+            button(
+                row![
+                    text("💻").size(16).width(Length::Fixed(24.0)),
+                    text("Local Terminal (Bash)").size(14),
+                ]
+                .align_y(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .padding(10)
+            .style(ui_style::quick_connect_item)
+            .on_press(Message::CreateLocalTab),
+        ]
+        .spacing(8);
+
+        // 4. Footer Hints
+        let footer = row![
+            text("↑↓ NAVIGATE")
+                .size(10)
+                .style(ui_style::quick_connect_footer_hint),
+            text("↩ SELECT")
+                .size(10)
+                .style(ui_style::quick_connect_footer_hint),
+            Space::new().width(Length::Fill),
+            text("⌘ MANAGE ALL")
+                .size(10)
+                .style(ui_style::quick_connect_footer_hint),
+        ]
+        .spacing(16)
+        .padding(8);
+
+        // Assemble Content
+        let content = column![
+            search_bar,
+            Space::new().height(16.0),
+            scrollable(column![
+                remote_section,
+                Space::new().height(24.0),
+                local_section
+            ])
+            .height(Length::Fill),
+            Space::new().height(16.0),
+            footer
+        ]
+        .spacing(0)
+        .padding(24)
+        .width(Length::Fixed(600.0))
+        .height(Length::Fixed(450.0));
+
+        container(content)
+            .style(ui_style::quick_connect_container)
+            .into()
+    }
+
     pub fn view(&self) -> Element<'_, Message> {
-        use iced::widget::{column, container, row};
+        use iced::widget::container::transparent;
+        use iced::widget::{Space, button, column, container, row, stack};
 
         let content = match self.active_view {
             ActiveView::Terminal => self.terminal_view(),
@@ -798,7 +958,7 @@ impl App {
             .height(Length::Fill)
             .style(ui_style::app_background);
 
-        if self.show_menu {
+        let main_view: Element<'_, Message> = if self.show_menu {
             let left_menu = container(self.sidebar_menu())
                 .width(Length::Fixed(180.0))
                 .height(Length::Fill)
@@ -811,6 +971,31 @@ impl App {
                 .into()
         } else {
             base_container.into()
+        };
+
+        if self.show_quick_connect {
+            // Center the popover
+            let popover = container(self.quick_connect_view())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
+
+            // Dark semi-transparent overlay
+            let overlay = button(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(transparent),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(ui_style::modal_backdrop)
+            .on_press(Message::ToggleQuickConnect);
+
+            stack![main_view, overlay, popover].into()
+        } else {
+            main_view
         }
     }
 
@@ -1217,7 +1402,7 @@ impl App {
     }
 
     fn sidebar_menu(&self) -> Element<'_, Message> {
-        use iced::widget::{button, column, container, row, text};
+        use iced::widget::{Space, button, column, container, row, text};
 
         column![
             text("MENU").size(12).style(ui_style::muted_text),
@@ -1262,6 +1447,16 @@ impl App {
             .padding([8, 12])
             .style(ui_style::menu_item)
             .on_press(Message::ShowSettings),
+            Space::new().height(Length::Fill),
+            button(
+                row![text("«").size(14), text("Collapse").size(12),]
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+            )
+            .width(Length::Fill)
+            .padding([6, 12])
+            .style(ui_style::menu_item)
+            .on_press(Message::ToggleMenu),
         ]
         .spacing(2)
         .into()
@@ -1285,12 +1480,20 @@ impl App {
             }
         };
 
+        let menu_button = if !self.show_menu {
+            row![
+                button(text("≡").size(20))
+                    .padding([4, 8])
+                    .style(ui_style::menu_button(self.show_menu))
+                    .on_press(Message::ToggleMenu),
+                text("│").size(12).style(ui_style::muted_text),
+            ]
+        } else {
+            row![]
+        };
+
         let status_bar = row![
-            button(text("≡").size(20))
-                .padding([4, 8])
-                .style(ui_style::menu_button(self.show_menu))
-                .on_press(Message::ToggleMenu),
-            text("│").size(12).style(ui_style::muted_text),
+            menu_button,
             text(status_left).size(12),
             container("").width(Length::Fill),
             text("UTF-8").size(12).style(ui_style::muted_text),
@@ -1341,19 +1544,12 @@ impl App {
 
         // Only show '+' button if we are NOT in the Session Manager view
         if self.active_view != ActiveView::SessionManager {
-            tabs_row = tabs_row
-                .push(
-                    button(text("+ SSH").size(14))
-                        .padding([6, 12])
-                        .style(ui_style::new_tab_button)
-                        .on_press(Message::CreateNewSession),
-                )
-                .push(
-                    button(text("+ Local").size(14))
-                        .padding([6, 12])
-                        .style(ui_style::new_tab_button)
-                        .on_press(Message::CreateLocalTab),
-                );
+            tabs_row = tabs_row.push(
+                button(text("+").size(16))
+                    .padding([6, 12])
+                    .style(ui_style::new_tab_button)
+                    .on_press(Message::ToggleQuickConnect),
+            );
         }
 
         let tab_bar = tabs_row

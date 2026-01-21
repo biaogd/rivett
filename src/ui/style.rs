@@ -298,3 +298,93 @@ pub fn dropdown_menu(_theme: &Theme) -> container::Style {
         ..container::Style::default()
     }
 }
+
+// Quick Connect Popover
+pub fn quick_connect_container(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::WHITE)),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.1),
+            offset: Vector::new(0.0, 4.0),
+            blur_radius: 16.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn quick_connect_item(_theme: &Theme, status: button::Status) -> button::Style {
+    let mut style = button::Style {
+        background: None,
+        text_color: Color::BLACK,
+        ..button::Style::default()
+    };
+
+    if let button::Status::Hovered = status {
+        style.background = Some(Background::Color(color_panel_elevated()));
+    }
+
+    style
+}
+
+pub fn modal_backdrop(_theme: &Theme, _status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+        ..button::Style::default()
+    }
+}
+
+pub fn search_bar_container(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgb8(248, 250, 252))), // slate-50
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn transparent(_theme: &Theme, _status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        ..button::Style::default()
+    }
+}
+
+pub fn quick_connect_section_header(_theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(Color::from_rgb8(148, 163, 184)), // slate-400
+    }
+}
+
+pub fn quick_connect_footer_hint(_theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(Color::from_rgb8(148, 163, 184)), // slate-400
+    }
+}
+
+pub fn search_input(
+    _theme: &Theme,
+    status: iced::widget::text_input::Status,
+) -> iced::widget::text_input::Style {
+    use iced::widget::text_input;
+
+    text_input::Style {
+        background: Background::Color(Color::WHITE),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        icon: Color::from_rgb8(100, 116, 139),
+        placeholder: Color::from_rgb8(148, 163, 184),
+        value: Color::BLACK,
+        selection: Color::from_rgb8(14, 165, 233),
+    }
+}
