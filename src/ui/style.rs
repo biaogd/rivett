@@ -48,6 +48,98 @@ fn color_accent_soft() -> Color {
 
 // Status colors
 
+// === Dialog and Modal Styles ===
+
+pub fn dialog_container(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(color_panel())),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 12.0.into(),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.15),
+            offset: Vector::new(0.0, 8.0),
+            blur_radius: 24.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn active_tab_header(_theme: &Theme) -> container::Style {
+    container::Style {
+        border: Border {
+            color: color_accent(),
+            width: 0.0,
+            radius: 0.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn inactive_tab_header(_theme: &Theme) -> container::Style {
+    container::Style {
+        ..container::Style::default()
+    }
+}
+
+pub fn error_banner(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgb(1.0, 0.95, 0.95))),
+        border: Border {
+            color: Color::from_rgb(0.9, 0.6, 0.6),
+            width: 1.0,
+            radius: 6.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn label_text(_theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(color_text_muted()),
+    }
+}
+
+pub fn primary_button_style(_theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(match status {
+            button::Status::Hovered => Color::from_rgb(0.02, 0.5, 0.88),
+            _ => color_accent(),
+        })),
+        text_color: Color::WHITE,
+        border: Border {
+            radius: 6.0.into(),
+            ..Default::default()
+        },
+        ..button::Style::default()
+    }
+}
+
+pub fn secondary_button_style(_theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(match status {
+            button::Status::Hovered => Color::from_rgb(0.96, 0.96, 0.96),
+            _ => Color::from_rgb(0.98, 0.98, 0.98),
+        })),
+        text_color: Color::from_rgb(0.3, 0.3, 0.3),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 6.0.into(),
+        },
+        ..button::Style::default()
+    }
+}
+
+pub fn divider(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(color_border())),
+        ..container::Style::default()
+    }
+}
+
 // === Container Styles ===
 
 pub fn app_background(_theme: &Theme) -> container::Style {
@@ -386,5 +478,78 @@ pub fn search_input(
         placeholder: Color::from_rgb8(148, 163, 184),
         value: Color::BLACK,
         selection: Color::from_rgb8(14, 165, 233),
+    }
+}
+
+// === Sidebar Styles ===
+
+pub fn sidebar_search_input(
+    _theme: &Theme,
+    _status: iced::widget::text_input::Status,
+) -> iced::widget::text_input::Style {
+    use iced::widget::text_input;
+
+    text_input::Style {
+        background: Background::Color(Color::from_rgb(0.97, 0.97, 0.97)),
+        border: Border {
+            color: Color::from_rgb(0.9, 0.9, 0.9),
+            width: 1.0,
+            radius: 6.0.into(),
+        },
+        icon: Color::from_rgb8(100, 116, 139),
+        placeholder: Color::from_rgb8(148, 163, 184),
+        value: Color::from_rgb8(50, 50, 50),
+        selection: color_accent(),
+    }
+}
+
+pub fn sidebar_button_active(_theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(match status {
+            button::Status::Hovered => Color::from_rgb(0.92, 0.92, 0.92),
+            _ => Color::from_rgb(0.95, 0.95, 0.95),
+        })),
+        text_color: Color::from_rgb(0.2, 0.2, 0.2),
+        border: Border {
+            radius: 6.0.into(),
+            ..Default::default()
+        },
+        ..button::Style::default()
+    }
+}
+
+pub fn sidebar_button_inactive(_theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(match status {
+            button::Status::Hovered => Color::from_rgb(0.95, 0.95, 0.95),
+            _ => Color::TRANSPARENT,
+        })),
+        text_color: Color::from_rgb(0.3, 0.3, 0.3),
+        border: Border {
+            radius: 6.0.into(),
+            ..Default::default()
+        },
+        ..button::Style::default()
+    }
+}
+
+pub fn sidebar_section_header(_theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(Color::from_rgb8(100, 116, 139)), // slate-500
+    }
+}
+
+pub fn sidebar_recent_item(_theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(match status {
+            button::Status::Hovered => Color::from_rgb(0.96, 0.96, 0.96),
+            _ => Color::TRANSPARENT,
+        })),
+        text_color: Color::from_rgb(0.4, 0.4, 0.4),
+        border: Border {
+            radius: 4.0.into(),
+            ..Default::default()
+        },
+        ..button::Style::default()
     }
 }

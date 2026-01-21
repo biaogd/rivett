@@ -16,6 +16,18 @@ pub fn render<'a>(
     auth_method_password: bool,
     validation_error: Option<&'a String>,
 ) -> Element<'a, Message> {
+    // Suppress unused parameter warnings - these are used by the dialog at app level
+    let _ = (
+        editing_session,
+        form_name,
+        form_host,
+        form_port,
+        form_username,
+        form_password,
+        auth_method_password,
+        validation_error,
+    );
+
     let title_bar = row![
         text("Session Manager").size(20),
         container("").width(Length::Fill),
@@ -32,7 +44,7 @@ pub fn render<'a>(
     .align_y(Alignment::Center)
     .padding([12, 16]);
 
-    // Left panel: Session list
+    // Session list (full width now, no side panel)
     let session_list: Element<Message> = if saved_sessions.is_empty() {
         column![
             container("").height(Length::Fixed(60.0)),
@@ -72,50 +84,14 @@ pub fn render<'a>(
         .into()
     };
 
-    // Right panel: Form or empty state
-    let right_panel = if editing_session.is_some() {
-        container(
-            container(
-                scrollable(components::session_form::render(
-                    editing_session,
-                    saved_sessions,
-                    form_name,
-                    form_host,
-                    form_port,
-                    form_username,
-                    form_password,
-                    auth_method_password,
-                    validation_error,
-                ))
-                .height(Length::Fill),
-            )
-            .padding(16)
-            .height(Length::Fill)
-            .style(ui_style::panel),
-        )
-        .width(Length::Fixed(400.0)) // Fixed width for form instead of portion
-        .height(Length::Fill)
-        .padding(12)
-    } else {
-        container("")
-            .width(Length::Fixed(0.0))
-            .height(Length::Fixed(0.0))
-    };
-
-    let content = column![
+    column![
         container(title_bar)
             .width(Length::Fill)
             .style(ui_style::tab_bar),
-        row![
-            container(session_list)
-                .width(Length::Fill) // Take remaining space
-                .height(Length::Fill),
-            right_panel,
-        ]
-        .height(Length::Fill),
+        container(session_list)
+            .width(Length::Fill)
+            .height(Length::Fill),
     ]
-    .spacing(0);
-
-    // Return content directly (shell adds background)
-    content.into()
+    .spacing(0)
+    .into()
 }

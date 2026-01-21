@@ -785,7 +785,7 @@ impl App {
             .style(ui_style::app_background);
 
         let main_view: Element<'_, Message> = if self.show_menu {
-            let left_menu = container(views::sidebar::render())
+            let left_menu = container(views::sidebar::render(self.active_view))
                 .width(Length::Fixed(180.0))
                 .height(Length::Fill)
                 .padding(12)
@@ -799,7 +799,8 @@ impl App {
             base_container.into()
         };
 
-        if self.show_quick_connect {
+        // Quick Connect overlay
+        let view_with_quick_connect = if self.show_quick_connect {
             // Center the popover
             let popover = container(views::quick_connect::render(
                 &self.quick_connect_query,
@@ -825,6 +826,46 @@ impl App {
             stack![main_view, overlay, popover].into()
         } else {
             main_view
+        };
+
+        // Session Dialog overlay (on top of everything)
+        if self.active_view == ActiveView::SessionManager && self.editing_session.is_some() {
+            // Dark semi-transparent backdrop
+            let backdrop = button(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(ui_style::modal_backdrop)
+            .on_press(Message::CancelSessionEdit);
+
+            // Centered dialog wrapped in mouse_area to capture clicks
+            let dialog_content = components::session_dialog::render(
+                self.editing_session.as_ref(),
+                &self.saved_sessions,
+                &self.form_name,
+                &self.form_host,
+                &self.form_port,
+                &self.form_username,
+                &self.form_password,
+                self.auth_method_password,
+                self.validation_error.as_ref(),
+            );
+
+            // Wrap in mouse_area to prevent click-through
+            let dialog = container(
+                iced::widget::mouse_area(dialog_content).on_press(Message::Ignore), // Capture clicks but do nothing
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
+
+            stack![view_with_quick_connect, backdrop, dialog].into()
+        } else {
+            view_with_quick_connect
         }
     }
 
