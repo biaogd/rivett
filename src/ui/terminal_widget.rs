@@ -69,28 +69,32 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                             let col = (position.x / CELL_WIDTH) as usize;
                             let line = (position.y / CELL_HEIGHT) as usize;
 
-                            let mut emulator = self.emulator.clone();
+                            // let mut emulator = self.emulator.clone();
 
                             // Check for double click
                             let now = std::time::Instant::now();
                             if let Some(last_click) = state.last_click_time {
                                 if now.duration_since(last_click).as_millis() < 500 {
                                     // Double click!
-                                    emulator.on_mouse_double_click(col, line);
+                                    // emulator.on_mouse_double_click(col, line);
                                     state.is_dragging = true;
                                     state.last_click_time = None; // Reset
-                                    self.cache.clear();
-                                    return Some(iced::widget::canvas::Action::request_redraw());
+                                    // self.cache.clear();
+                                    return Some(iced::widget::canvas::Action::publish(
+                                        Message::TerminalMouseDoubleClick(col, line),
+                                    ));
                                 }
                             }
 
                             // Single click
-                            emulator.on_mouse_press(col, line);
+                            // emulator.on_mouse_press(col, line);
                             state.is_dragging = true;
                             state.last_click_time = Some(now);
 
-                            self.cache.clear();
-                            return Some(iced::widget::canvas::Action::request_redraw());
+                            // self.cache.clear();
+                            return Some(iced::widget::canvas::Action::publish(
+                                Message::TerminalMousePress(col, line),
+                            ));
                         }
                     }
                 }
@@ -100,20 +104,24 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                             let col = (position.x / CELL_WIDTH) as usize;
                             let line = (position.y / CELL_HEIGHT) as usize;
 
-                            let mut emulator = self.emulator.clone();
-                            emulator.on_mouse_drag(col, line);
-                            self.cache.clear();
-                            return Some(iced::widget::canvas::Action::request_redraw());
+                            // let mut emulator = self.emulator.clone();
+                            // emulator.on_mouse_drag(col, line);
+                            // self.cache.clear();
+                            return Some(iced::widget::canvas::Action::publish(
+                                Message::TerminalMouseDrag(col, line),
+                            ));
                         }
                     }
                 }
                 mouse::Event::ButtonReleased(mouse::Button::Left) => {
                     if state.is_dragging {
-                        let mut emulator = self.emulator.clone();
-                        emulator.on_mouse_release();
+                        // let mut emulator = self.emulator.clone();
+                        // emulator.on_mouse_release();
                         state.is_dragging = false;
-                        self.cache.clear();
-                        return Some(iced::widget::canvas::Action::request_redraw());
+                        // self.cache.clear();
+                        return Some(iced::widget::canvas::Action::publish(
+                            Message::TerminalMouseRelease,
+                        ));
                     }
                 }
                 _ => {}

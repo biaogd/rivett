@@ -9,6 +9,8 @@ use crate::core::SessionManager;
 use crate::platform::PlatformServices;
 use crate::session::{SessionConfig, SessionStorage};
 use crate::terminal::TerminalEmulator;
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use std::io::Read;
 use style as ui_style;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,6 +22,7 @@ pub enum ActiveView {
 #[derive(Debug, Clone)]
 pub enum Message {
     // CreateSession, // Removed unused
+    CreateLocalTab,
     SelectTab(usize),
     CloseTab(usize),
     ToggleMenu,
@@ -49,7 +52,7 @@ pub enum Message {
     SessionConnected(
         Result<
             (
-                Arc<Mutex<SshSession>>,
+                Arc<Mutex<crate::ssh::SshSession>>,
                 Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>>,
             ),
             String,
@@ -59,6 +62,11 @@ pub enum Message {
     ShellOpened(Result<russh::ChannelId, String>, usize),
     TerminalDataReceived(usize, Vec<u8>),
     TerminalInput(Vec<u8>),
+    // Terminal Mouse Events
+    TerminalMousePress(usize, usize),
+    TerminalMouseDrag(usize, usize),
+    TerminalMouseRelease,
+    TerminalMouseDoubleClick(usize, usize),
     TerminalResize(usize, usize),
     WindowResized(u32, u32),
     ScrollWheel(f32), // delta in lines
@@ -140,9 +148,118 @@ impl App {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        let mut commands = Vec::new();
+
         match message {
+            Message::CreateLocalTab => {
+                let system = native_pty_system();
+                // Create a generic PTY size
+                let size = PtySize {
+                    rows: 24,
+                    cols: 80,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                };
+
+                match system.openpty(size) {
+                    Ok(pair) => {
+                        let mut cmd = CommandBuilder::new("zsh"); // Default to zsh or use SHELL env
+                        cmd.env("TERM", "xterm-256color");
+                        // TODO: Use std::env::var("SHELL").unwrap_or("bash".into())
+
+                        match pair.slave.spawn_command(cmd) {
+                            Ok(_) => {
+                                println!("Local: process spawned");
+                                let master = pair.master;
+                                let mut reader = master.try_clone_reader().unwrap();
+
+                                // Create generic session
+                                let backend = crate::core::backend::SessionBackend::Local {
+                                    master: Arc::new(std::sync::Mutex::new(master)),
+                                };
+                                let session = crate::core::session::Session::new(backend);
+
+                                // Create RX/TX
+                                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+                                // Spawn reader task
+                                std::thread::spawn(move || {
+                                    println!("Local: reader thread started");
+                                    let mut buf = [0u8; 1024];
+                                    loop {
+                                        match reader.read(&mut buf) {
+                                            Ok(n) if n > 0 => {
+                                                println!("Local: read {} bytes from PTY", n);
+                                                if let Err(e) = tx.send(buf[..n].to_vec()) {
+                                                    println!(
+                                                        "Local: failed to send to channel: {}",
+                                                        e
+                                                    );
+                                                    break;
+                                                }
+                                            }
+                                            Ok(_) => {
+                                                println!("Local: read 0 bytes");
+                                                break;
+                                            }
+                                            Err(e) => {
+                                                println!("Local: read error: {}", e);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    println!("Local: reader thread ended");
+                                });
+
+                                let mut tab = SessionTab::new("Local Shell");
+                                tab.state = SessionState::Connected;
+                                tab.session = Some(session);
+                                tab.rx = Some(Arc::new(Mutex::new(rx)));
+
+                                self.tabs.push(tab);
+                                let tab_index = self.tabs.len() - 1;
+                                self.active_tab = tab_index;
+                                self.active_view = ActiveView::Terminal;
+
+                                // Start reading loop (same as SSH)
+                                // We need access to rx again? no, we put it in tab.
+                                // But we need to start the pumping loop.
+                                // We can't access tab.rx easily because it's wrapped.
+                                // But we have a clone if we didn't move it?
+                                // Or we can retrieve it.
+
+                                // Let's clone rx before moving to tab? No, UnboundedReceiver is not Clone.
+                                // Arc<Mutex<...>> IS Clone.
+                                if let Some(tab) = self.tabs.get_mut(tab_index) {
+                                    if let Some(rx) = &tab.rx {
+                                        let rx_clone = rx.clone();
+                                        let read_task = Task::perform(
+                                            async move {
+                                                let mut guard = rx_clone.lock().await;
+                                                match guard.recv().await {
+                                                    Some(data) => (tab_index, data),
+                                                    None => (tab_index, vec![]),
+                                                }
+                                            },
+                                            |(idx, data)| Message::TerminalDataReceived(idx, data),
+                                        );
+                                        commands.push(read_task);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                println!("Failed to spawn shell: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("Failed to open PTY: {}", e);
+                    }
+                }
+            }
             // Message::CreateSession => { ... } // Removed
             Message::SelectTab(index) => {
+                println!("UI: Selecting tab {}", index);
                 if index < self.tabs.len() {
                     self.active_tab = index;
                 }
@@ -258,7 +375,7 @@ impl App {
                         async move {
                             match tokio::time::timeout(
                                 std::time::Duration::from_secs(10),
-                                SshSession::connect(&host, port, &username, &password),
+                                crate::ssh::SshSession::connect(&host, port, &username, &password),
                             )
                             .await
                             {
@@ -375,7 +492,8 @@ impl App {
                 Ok((session, rx)) => {
                     if let Some(tab) = self.tabs.get_mut(tab_index) {
                         tab.title = format!("{} (Connected)", tab.title);
-                        tab.session = Some(session.clone());
+                        tab.ssh_handle = Some(session.clone()); // Store SSH handle
+                        tab.session = None; // Not fully ready (shell not opened)
                         tab.rx = Some(rx.clone());
                         tab.state = SessionState::Connected; // Transition to Connected
 
@@ -422,8 +540,16 @@ impl App {
             Message::ShellOpened(result, tab_index) => match result {
                 Ok(id) => {
                     if let Some(tab) = self.tabs.get_mut(tab_index) {
-                        tab.channel_id = Some(id);
                         println!("Shell opened on channel {:?} for tab {}", id, tab_index);
+
+                        // Create Unified Session
+                        if let Some(ssh_handle) = &tab.ssh_handle {
+                            let backend = crate::core::backend::SessionBackend::Ssh {
+                                session: ssh_handle.clone(),
+                                channel_id: id,
+                            };
+                            tab.session = Some(Session::new(backend));
+                        }
 
                         // Trigger initial resize based on current window size
                         let width = self.window_width;
@@ -481,19 +607,41 @@ impl App {
                     }
                 }
             }
+            Message::TerminalMousePress(col, line) => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    tab.emulator.on_mouse_press(col, line);
+                    tab.cache.clear();
+                }
+            }
+            Message::TerminalMouseDrag(col, line) => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    tab.emulator.on_mouse_drag(col, line);
+                    tab.cache.clear();
+                }
+            }
+            Message::TerminalMouseRelease => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    tab.emulator.on_mouse_release();
+                    tab.cache.clear();
+                }
+            }
+            Message::TerminalMouseDoubleClick(col, line) => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    tab.emulator.on_mouse_double_click(col, line);
+                    tab.cache.clear();
+                }
+            }
             Message::TerminalResize(cols, rows) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.emulator.resize(cols, rows);
 
-                    // Resize remote PTY
-                    if let (Some(session), Some(channel_id)) = (&tab.session, tab.channel_id) {
+                    // Resize session (SSH or Local)
+                    if let Some(session) = &tab.session {
                         let session = session.clone();
-                        let channel_id = channel_id;
                         return Task::perform(
                             async move {
-                                let mut guard = session.lock().await;
                                 // We ignore error for now
-                                let _ = guard.resize(channel_id, cols as u32, rows as u32).await;
+                                let _ = session.resize(cols as u16, rows as u16).await;
                             },
                             |_| Message::TerminalInput(vec![]),
                         );
@@ -527,24 +675,31 @@ impl App {
                 }
             }
             Message::TerminalInput(data) => {
+                if !data.is_empty() {
+                    println!("UI: Terminal Input: {} bytes", data.len());
+                }
                 if data.is_empty() {
                     return Task::none();
                 }
-                // 1. Send to SSH Session (if connected)
+                // Send to Session (if connected)
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-                    if let (Some(session), Some(channel_id)) = (&tab.session, tab.channel_id) {
-                        let session_clone = session.clone();
-                        let channel_id = channel_id;
+                    if let Some(session) = &tab.session {
+                        let session = session.clone();
                         let data_to_send = data.clone();
 
                         return Task::perform(
                             async move {
-                                let mut guard = session_clone.lock().await;
-                                let _ = guard.write_data(channel_id, &data_to_send).await;
+                                if let Err(e) = session.write(&data_to_send).await {
+                                    println!("UI: Write error: {}", e);
+                                }
                             },
                             |_| Message::TerminalInput(vec![]),
                         );
+                    } else {
+                        println!("UI: Tab {} ignoring input (no session)", self.active_tab);
                     }
+                } else {
+                    println!("UI: Tab {} ignoring input (invalid index)", self.active_tab);
                 }
             }
             Message::Tick(_now) => {
@@ -573,7 +728,9 @@ impl App {
                                 // Add timeout wrapper
                                 match tokio::time::timeout(
                                     std::time::Duration::from_secs(10),
-                                    SshSession::connect(&host, port, &username, &password),
+                                    crate::ssh::SshSession::connect(
+                                        &host, port, &username, &password,
+                                    ),
                                 )
                                 .await
                                 {
@@ -613,7 +770,7 @@ impl App {
                 }
             }
         }
-        Task::none()
+        Task::batch(commands)
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -1184,12 +1341,19 @@ impl App {
 
         // Only show '+' button if we are NOT in the Session Manager view
         if self.active_view != ActiveView::SessionManager {
-            tabs_row = tabs_row.push(
-                button(text("+").size(16))
-                    .padding([6, 12])
-                    .style(ui_style::new_tab_button)
-                    .on_press(Message::CreateNewSession),
-            );
+            tabs_row = tabs_row
+                .push(
+                    button(text("+ SSH").size(14))
+                        .padding([6, 12])
+                        .style(ui_style::new_tab_button)
+                        .on_press(Message::CreateNewSession),
+                )
+                .push(
+                    button(text("+ Local").size(14))
+                        .padding([6, 12])
+                        .style(ui_style::new_tab_button)
+                        .on_press(Message::CreateLocalTab),
+                );
         }
 
         let tab_bar = tabs_row
@@ -1225,6 +1389,7 @@ impl App {
             let keyboard_subscription = event::listen().map(|event| {
                 match event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        println!("UI: KeyPressed: {:?} modifiers: {:?}", key, modifiers);
                         // Handle Cmd+C / Cmd+V
                         if modifiers.command() {
                             match key {
@@ -1275,7 +1440,7 @@ impl App {
     }
 }
 
-use crate::ssh::SshSession;
+use crate::core::session::Session;
 use iced::widget::canvas::Cache;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1292,10 +1457,11 @@ pub struct SessionTab {
     pub cache: Cache,
     pub state: SessionState,
     pub spinner_cache: Cache, // Cache for spinner drawing
-    // SSH Connection
-    pub session: Option<Arc<Mutex<SshSession>>>,
+    // Session (abstracted)
+    pub session: Option<Session>,
+    // Temporary storage for SSH handle before shell is opened
+    pub ssh_handle: Option<Arc<Mutex<crate::ssh::SshSession>>>,
     pub rx: Option<Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>>>,
-    pub channel_id: Option<russh::ChannelId>,
     pub emulator: TerminalEmulator,
 }
 
@@ -1307,8 +1473,8 @@ impl Clone for SessionTab {
             state: self.state.clone(),
             spinner_cache: iced::widget::canvas::Cache::new(),
             session: self.session.clone(),
+            ssh_handle: self.ssh_handle.clone(),
             rx: self.rx.clone(),
-            channel_id: self.channel_id,
             emulator: self.emulator.clone(),
         }
     }
@@ -1322,8 +1488,8 @@ impl SessionTab {
             state: SessionState::Connecting(std::time::Instant::now()),
             spinner_cache: Cache::default(),
             session: None,
+            ssh_handle: None,
             rx: None,
-            channel_id: None,
             emulator: TerminalEmulator::new(),
         }
     }
