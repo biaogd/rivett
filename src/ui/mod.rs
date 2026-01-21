@@ -23,6 +23,7 @@ pub use state::{SessionState, SessionTab};
 
 #[derive(Debug)]
 pub struct App {
+    #[allow(dead_code)]
     sessions: SessionManager,
     #[allow(dead_code)]
     platform: PlatformServices,

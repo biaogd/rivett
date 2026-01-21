@@ -11,8 +11,8 @@ pub fn render<'a>(
     form_host: &'a str,
     form_port: &'a str,
     form_username: &'a str,
-    form_password: &'a str,
-    auth_method_password: bool,
+    _form_password: &'a str,
+    _auth_method_password: bool,
     validation_error: Option<&'a String>,
 ) -> Element<'a, Message> {
     let is_new = editing_session

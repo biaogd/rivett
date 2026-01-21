@@ -345,6 +345,7 @@ pub fn status_bar(_theme: &Theme) -> container::Style {
 }
 
 // Menu item button
+#[allow(dead_code)]
 pub fn menu_item(_theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::Style {
         background: None,
@@ -366,6 +367,7 @@ pub fn menu_item(_theme: &Theme, status: button::Status) -> button::Style {
 }
 
 // Menu divider line
+#[allow(dead_code)]
 pub fn menu_divider(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(color_border())),
@@ -430,6 +432,7 @@ pub fn modal_backdrop(_theme: &Theme, _status: button::Status) -> button::Style 
     }
 }
 
+#[allow(dead_code)]
 pub fn search_bar_container(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(Color::from_rgb8(248, 250, 252))), // slate-50
@@ -442,6 +445,7 @@ pub fn search_bar_container(_theme: &Theme) -> container::Style {
     }
 }
 
+#[allow(dead_code)]
 pub fn transparent(_theme: &Theme, _status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(Color::TRANSPARENT)),
@@ -463,7 +467,7 @@ pub fn quick_connect_footer_hint(_theme: &Theme) -> text::Style {
 
 pub fn search_input(
     _theme: &Theme,
-    status: iced::widget::text_input::Status,
+    _status: iced::widget::text_input::Status,
 ) -> iced::widget::text_input::Style {
     use iced::widget::text_input;
 
@@ -483,6 +487,7 @@ pub fn search_input(
 
 // === Sidebar Styles ===
 
+#[allow(dead_code)]
 pub fn sidebar_search_input(
     _theme: &Theme,
     _status: iced::widget::text_input::Status,

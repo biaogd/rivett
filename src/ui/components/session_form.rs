@@ -4,6 +4,7 @@ use crate::ui::style as ui_style;
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Length};
 
+#[allow(dead_code)]
 pub fn render<'a>(
     editing_session: Option<&'a SessionConfig>,
     saved_sessions: &'a [SessionConfig],

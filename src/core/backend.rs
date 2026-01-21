@@ -43,7 +43,7 @@ impl SessionBackend {
                 Ok(())
             }
             SessionBackend::Local { master } => {
-                let mut master = master.lock().unwrap();
+                let master = master.lock().unwrap();
                 #[cfg(unix)]
                 {
                     use std::os::unix::io::FromRawFd;
@@ -83,7 +83,7 @@ impl SessionBackend {
                 Ok(())
             }
             SessionBackend::Local { master } => {
-                let mut master = master.lock().unwrap();
+                let master = master.lock().unwrap();
                 master.resize(portable_pty::PtySize {
                     rows,
                     cols,
