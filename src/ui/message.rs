@@ -61,12 +61,12 @@ pub enum Message {
     TerminalMouseDoubleClick(usize, usize),
     TerminalResize(usize, usize),
     WindowResized(u32, u32),
-    ScrollWheel(f32), // delta in lines
-    Tick(std::time::Instant),
+    ScrollWheel(f32),         // delta in lines
     RetryConnection(usize),   // tab index to retry
     EditSessionConfig(usize), // tab index to edit
     Copy,
     Paste,
     ClipboardReceived(Option<String>),
     Ignore,
+    Tick(std::time::Instant),
 }

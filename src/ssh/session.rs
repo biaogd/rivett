@@ -27,7 +27,7 @@ impl SshSession {
         password: &str,
     ) -> Result<(Self, mpsc::UnboundedReceiver<Vec<u8>>)> {
         let config = client::Config {
-            inactivity_timeout: Some(std::time::Duration::from_secs(30)),
+            inactivity_timeout: None, // Disable local timeout, rely on TCP keepalive or server timeout
             ..Default::default()
         };
         let config = Arc::new(config);

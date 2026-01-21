@@ -24,6 +24,9 @@ pub struct SessionTab {
     pub ssh_handle: Option<Arc<Mutex<crate::ssh::SshSession>>>,
     pub rx: Option<Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>>>,
     pub emulator: TerminalEmulator,
+    pub is_dirty: bool,
+    pub last_data_received: std::time::Instant,
+    pub last_redraw_time: std::time::Instant,
 }
 
 impl Clone for SessionTab {
@@ -37,6 +40,9 @@ impl Clone for SessionTab {
             ssh_handle: self.ssh_handle.clone(),
             rx: self.rx.clone(),
             emulator: self.emulator.clone(),
+            is_dirty: self.is_dirty,
+            last_data_received: self.last_data_received,
+            last_redraw_time: self.last_redraw_time,
         }
     }
 }
@@ -52,6 +58,9 @@ impl SessionTab {
             ssh_handle: None,
             rx: None,
             emulator: TerminalEmulator::new(),
+            is_dirty: false,
+            last_data_received: std::time::Instant::now(),
+            last_redraw_time: std::time::Instant::now(),
         }
     }
 }

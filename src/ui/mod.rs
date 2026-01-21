@@ -114,6 +114,8 @@ impl App {
                     Ok(pair) => {
                         let mut cmd = CommandBuilder::new("zsh"); // Default to zsh or use SHELL env
                         cmd.env("TERM", "xterm-256color");
+                        cmd.env("LANG", "en_US.UTF-8");
+                        cmd.env("LC_ALL", "en_US.UTF-8");
                         // TODO: Use std::env::var("SHELL").unwrap_or("bash".into())
 
                         match pair.slave.spawn_command(cmd) {
@@ -138,7 +140,6 @@ impl App {
                                     loop {
                                         match reader.read(&mut buf) {
                                             Ok(n) if n > 0 => {
-                                                println!("Local: read {} bytes from PTY", n);
                                                 if let Err(e) = tx.send(buf[..n].to_vec()) {
                                                     println!(
                                                         "Local: failed to send to channel: {}",
@@ -147,10 +148,7 @@ impl App {
                                                     break;
                                                 }
                                             }
-                                            Ok(_) => {
-                                                println!("Local: read 0 bytes");
-                                                break;
-                                            }
+                                            Ok(_) => break,
                                             Err(e) => {
                                                 println!("Local: read error: {}", e);
                                                 break;
@@ -162,8 +160,25 @@ impl App {
 
                                 let mut tab = SessionTab::new("Local Shell");
                                 tab.state = SessionState::Connected;
-                                tab.session = Some(session);
+                                tab.session = Some(session.clone());
                                 tab.rx = Some(Arc::new(Mutex::new(rx)));
+
+                                // Get the terminal output receiver for responses like CPR
+                                if let Some(mut output_rx) = tab.emulator.take_output_receiver() {
+                                    let session_clone = session.clone();
+                                    // Spawn task to write terminal responses back to PTY
+                                    std::thread::spawn(move || {
+                                        let rt = tokio::runtime::Runtime::new().unwrap();
+                                        rt.block_on(async {
+                                            while let Some(data) = output_rx.recv().await {
+                                                if let Err(e) = session_clone.write(&data).await {
+                                                    println!("Failed to write terminal response to PTY: {}", e);
+                                                    break;
+                                                }
+                                            }
+                                        });
+                                    });
+                                }
 
                                 self.tabs.push(tab);
                                 let tab_index = self.tabs.len() - 1;
@@ -171,7 +186,7 @@ impl App {
                                 self.active_view = ActiveView::Terminal;
 
                                 // Start reading loop (same as SSH)
-                                // We need access to rx again? no, we put it in tab.
+                                // No change needed for SSH yet, focusing on local shell which explicitly spawns a command.
                                 // But we need to start the pumping loop.
                                 // We can't access tab.rx easily because it's wrapped.
                                 // But we have a clone if we didn't move it?
@@ -193,6 +208,29 @@ impl App {
                                             |(idx, data)| Message::TerminalDataReceived(idx, data),
                                         );
                                         commands.push(read_task);
+
+                                        // Trigger initial resize (Critical for correct size)
+                                        let width = self.window_width;
+                                        let height = self.window_height;
+                                        if width > 0 && height > 0 {
+                                            let sidebar_width =
+                                                if self.show_menu { 180.0 } else { 0.0 };
+                                            let h_padding = 24.0;
+                                            let v_padding = 120.0;
+
+                                            let term_w =
+                                                (width as f32 - sidebar_width - h_padding).max(0.0);
+                                            let term_h = (height as f32 - v_padding).max(0.0);
+
+                                            let cols =
+                                                (term_w / terminal_widget::CELL_WIDTH) as usize;
+                                            let rows =
+                                                (term_h / terminal_widget::CELL_HEIGHT) as usize;
+
+                                            commands.push(Task::done(Message::TerminalResize(
+                                                cols, rows,
+                                            )));
+                                        }
                                     }
                                 }
                             }
@@ -499,6 +537,35 @@ impl App {
                                 channel_id: id,
                             };
                             tab.session = Some(Session::new(backend));
+
+                            // Wire up terminal responses (CPR) for SSH
+                            if let Some(mut output_rx) = tab.emulator.take_output_receiver() {
+                                if let Some(session) = &tab.session {
+                                    let session_clone = session.clone();
+                                    std::thread::spawn(move || {
+                                        let rt = tokio::runtime::Runtime::new().unwrap();
+                                        rt.block_on(async {
+                                            while let Some(data) = output_rx.recv().await {
+                                                // println!("SSH: Sending terminal response: {} bytes", data.len());
+                                                // Add timeout to prevent hanging if connection is dead
+                                                let write_future = session_clone.write(&data);
+                                                match tokio::time::timeout(std::time::Duration::from_millis(1000), write_future).await {
+                                                    Ok(Ok(_)) => {},
+                                                    Ok(Err(e)) => {
+    println!("SSH: Failed to write terminal response: {}", e);
+                                                        break;
+                                                    },
+                                                    Err(_) => {
+                                                        println!("SSH: Write terminal response timeout - connection might be dead");
+                                                        // We don't break here immediately, hoping it's temporary? 
+                                                        // Or we should? If TCP is stuck, it's stuck.
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    });
+                                }
+                            }
                         }
 
                         // Trigger initial resize based on current window size
@@ -527,32 +594,17 @@ impl App {
                 }
             },
             Message::TerminalDataReceived(tab_index, data) => {
-                println!("UI: Received {} bytes for tab {}", data.len(), tab_index);
-
                 // Update the specific tab's emulator
                 if let Some(tab) = self.tabs.get_mut(tab_index) {
-                    for byte in &data {
-                        tab.emulator.process_input(*byte);
-                    }
-                    tab.cache.clear();
+                    tab.emulator.process_input(&data);
+                    // Throttled rendering: Mark dirty, allow Tick to clear cache
+                    tab.is_dirty = true;
+                    tab.last_data_received = std::time::Instant::now();
 
-                    // Continue reading for this tab
-                    if !data.is_empty() {
-                        if let Some(rx) = &tab.rx {
-                            let rx = rx.clone();
-                            return Task::perform(
-                                async move {
-                                    let mut guard = rx.lock().await;
-                                    match guard.recv().await {
-                                        Some(data) => (tab_index, data),
-                                        None => (tab_index, vec![]),
-                                    }
-                                },
-                                |(idx, data)| Message::TerminalDataReceived(idx, data),
-                            );
-                        }
-                    } else {
-                        println!("Stream ended for tab {}", tab_index);
+                    // Continue reading is now handled by Subscription
+                    if data.is_empty() {
+                        // Optional: Handle stream end if needed, though Subscription handles the loop
+                        // println!("Stream possibly ended or empty chunk for tab {}", tab_index);
                         tab.state = SessionState::Disconnected;
                     }
                 }
@@ -638,9 +690,6 @@ impl App {
                 return Task::perform(async move { name }, Message::ConnectToSession);
             }
             Message::TerminalInput(data) => {
-                if !data.is_empty() {
-                    println!("UI: Terminal Input: {} bytes", data.len());
-                }
                 if data.is_empty() {
                     return Task::none();
                 }
@@ -652,8 +701,16 @@ impl App {
 
                         return Task::perform(
                             async move {
-                                if let Err(e) = session.write(&data_to_send).await {
-                                    println!("UI: Write error: {}", e);
+                                let write_future = session.write(&data_to_send);
+                                match tokio::time::timeout(
+                                    std::time::Duration::from_millis(2000),
+                                    write_future,
+                                )
+                                .await
+                                {
+                                    Ok(Ok(_)) => {}
+                                    Ok(Err(e)) => println!("UI: Write error: {}", e),
+                                    Err(_) => println!("UI: Write timeout - session unresponsive"),
                                 }
                             },
                             |_| Message::TerminalInput(vec![]),
@@ -666,9 +723,27 @@ impl App {
                 }
             }
             Message::Tick(_now) => {
+                // Spinner animation
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     if let SessionState::Connecting(_) = tab.state {
                         tab.spinner_cache.clear();
+                    }
+                }
+
+                // Throttled rendering with debounce
+                let now = std::time::Instant::now();
+                for tab in &mut self.tabs {
+                    if tab.is_dirty {
+                        let stable_enough = now.duration_since(tab.last_data_received)
+                            > std::time::Duration::from_millis(5);
+                        let force_update = now.duration_since(tab.last_redraw_time)
+                            > std::time::Duration::from_millis(16);
+
+                        if stable_enough || force_update {
+                            tab.cache.clear();
+                            tab.is_dirty = false;
+                            tab.last_redraw_time = now;
+                        }
                     }
                 }
             }
@@ -886,11 +961,13 @@ impl App {
 
         let mut subs = Vec::new();
 
+        // Add Tick subscription for render throttling (approx 100 FPS check rate)
+        subs.push(iced::time::every(std::time::Duration::from_millis(10)).map(Message::Tick));
+
         if self.active_view == ActiveView::Terminal {
             let keyboard_subscription = event::listen().map(|event| {
                 match event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        println!("UI: KeyPressed: {:?} modifiers: {:?}", key, modifiers);
                         // Handle Cmd+C / Cmd+V
                         if modifiers.command() {
                             match key {
@@ -935,6 +1012,62 @@ impl App {
             .any(|tab| matches!(tab.state, SessionState::Connecting(_)));
         if any_connecting {
             subs.push(iced::time::every(std::time::Duration::from_millis(50)).map(Message::Tick));
+        }
+
+        // Hashable wrapper for Rx
+        struct HashableRx(
+            Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>>,
+            usize,
+        );
+
+        impl std::hash::Hash for HashableRx {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                (Arc::as_ptr(&self.0) as usize).hash(state);
+                self.1.hash(state);
+            }
+        }
+        impl PartialEq for HashableRx {
+            fn eq(&self, other: &Self) -> bool {
+                Arc::ptr_eq(&self.0, &other.0) && self.1 == other.1
+            }
+        }
+        impl Eq for HashableRx {}
+        impl Clone for HashableRx {
+            fn clone(&self) -> Self {
+                Self(self.0.clone(), self.1)
+            }
+        }
+
+        // Add PTY subscriptions
+        for (i, tab) in self.tabs.iter().enumerate() {
+            if let Some(rx) = &tab.rx {
+                let rx = rx.clone();
+
+                subs.push(iced::Subscription::run_with(
+                    HashableRx(rx, i),
+                    |HashableRx(rx, idx)| {
+                        let rx = rx.clone();
+                        let idx = *idx;
+                        iced::futures::stream::unfold(rx, move |rx| async move {
+                            let result = {
+                                let mut guard: tokio::sync::MutexGuard<
+                                    '_,
+                                    tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+                                > = rx.lock().await;
+                                guard.recv().await
+                            };
+
+                            match result {
+                                Some(data) => Some((Message::TerminalDataReceived(idx, data), rx)),
+                                None => {
+                                    std::future::pending::<()>().await;
+                                    None
+                                }
+                            }
+                        })
+                    },
+                ));
+            }
         }
 
         iced::Subscription::batch(subs)

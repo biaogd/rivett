@@ -1,28 +1,44 @@
-use alacritty_terminal::event::EventListener;
+use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::vte::ansi;
 use parking_lot::Mutex;
 use std::fmt;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 // Initial terminal size
 const DEFAULT_COLS: usize = 80;
 const DEFAULT_ROWS: usize = 24;
 
-#[derive(Clone, Debug)]
-struct VoidListener;
+/// EventListener that forwards terminal output (like cursor position reports) to a channel
+#[derive(Clone)]
+struct EventWriter {
+    tx: mpsc::UnboundedSender<Vec<u8>>,
+}
 
-impl EventListener for VoidListener {
-    fn send_event(&self, _event: alacritty_terminal::event::Event) {}
+impl EventListener for EventWriter {
+    fn send_event(&self, event: Event) {
+        match event {
+            Event::PtyWrite(ref s) => {
+                // Terminal wants to write something back to PTY (e.g., cursor position report)
+                let _ = self.tx.send(s.as_bytes().to_vec());
+            }
+            _ => {
+                // Ignore other events for now
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct TerminalEmulator {
-    term: Arc<Mutex<Term<VoidListener>>>,
+    term: Arc<Mutex<Term<EventWriter>>>,
     parser: Arc<Mutex<ansi::Processor>>,
     scroll_accumulator: Arc<Mutex<f32>>,
     selection_start: Option<alacritty_terminal::index::Point>,
+    /// Receiver for terminal output responses (like CPR)
+    output_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<Vec<u8>>>>>,
 }
 
 impl fmt::Debug for TerminalEmulator {
@@ -65,25 +81,32 @@ impl TerminalEmulator {
             rows: DEFAULT_ROWS,
         };
 
-        let term = Term::new(config, &size, VoidListener);
+        let (tx, rx) = mpsc::unbounded_channel();
+        let listener = EventWriter { tx };
+        let term = Term::new(config, &size, listener);
 
         Self {
             term: Arc::new(Mutex::new(term)),
             parser: Arc::new(Mutex::new(ansi::Processor::new())),
             scroll_accumulator: Arc::new(Mutex::new(0.0)),
             selection_start: None,
+            output_rx: Arc::new(Mutex::new(Some(rx))),
         }
     }
 
-    /// Process input byte (from SSH stream)
-    pub fn process_input(&mut self, byte: u8) {
+    /// Take the output receiver (should be called once during session setup)
+    pub fn take_output_receiver(&self) -> Option<mpsc::UnboundedReceiver<Vec<u8>>> {
+        self.output_rx.lock().take()
+    }
+
+    /// Process input bytes (from SSH stream)
+    pub fn process_input(&mut self, data: &[u8]) {
         let mut term = self.term.lock();
         let mut parser = self.parser.lock();
 
-        // Feed the byte to the parser, which updates the terminal state
+        // Feed the data to the parser, which updates the terminal state
         // Term implements Handler, so we pass it as the handler.
-        // process takes a byte slice.
-        parser.advance(&mut *term, &[byte]);
+        parser.advance(&mut *term, data);
     }
 
     pub fn resize(&mut self, cols: usize, rows: usize) {
@@ -219,7 +242,7 @@ impl TerminalEmulator {
 
     fn viewport_to_point(
         &self,
-        term: &Term<VoidListener>,
+        term: &Term<EventWriter>,
         col: usize,
         line: usize,
     ) -> alacritty_terminal::index::Point {
