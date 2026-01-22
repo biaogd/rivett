@@ -5,7 +5,7 @@ use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
 use crate::terminal::TerminalEmulator;
 use crate::ui::Message;
 
-pub const CELL_WIDTH: f32 = 7.5;
+pub const CELL_WIDTH: f32 = 7.2;
 pub const CELL_HEIGHT: f32 = 16.0;
 
 pub struct TerminalView<'a> {
@@ -15,7 +15,11 @@ pub struct TerminalView<'a> {
 }
 
 impl<'a> TerminalView<'a> {
-    pub fn new(emulator: TerminalEmulator, chrome_cache: &'a Cache, line_caches: &'a [Cache]) -> Self {
+    pub fn new(
+        emulator: TerminalEmulator,
+        chrome_cache: &'a Cache,
+        line_caches: &'a [Cache],
+    ) -> Self {
         Self {
             emulator,
             chrome_cache,
@@ -237,40 +241,42 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 let mut start_pos = Point::ORIGIN;
                 let mut last_col = -1;
 
-                self.emulator.render_line(line, |col, _line, c, fg, is_selected| {
-                    let x = col as f32 * cell_width;
-                    let y = line as f32 * cell_height;
-                    let color = convert_color(fg);
+                self.emulator
+                    .render_line(line, |col, _line, c, fg, is_selected| {
+                        let x = col as f32 * cell_width;
+                        let y = line as f32 * cell_height;
+                        let color = convert_color(fg);
 
-                    if is_selected {
-                        frame.fill_rectangle(
-                            Point::new(x, y),
-                            Size::new(cell_width, cell_height),
-                            Color::from_rgba8(100, 100, 200, 0.5),
-                        );
-                    }
+                        // Only render selection background for non-space characters
+                        if is_selected && !c.is_whitespace() {
+                            frame.fill_rectangle(
+                                Point::new(x, y),
+                                Size::new(cell_width, cell_height),
+                                Color::from_rgba8(100, 100, 200, 0.5),
+                            );
+                        }
 
-                    let break_span = color != current_fg || col as i32 != last_col + 1;
-                    if break_span && !current_text.is_empty() {
-                        frame.fill_text(Text {
-                            content: current_text.clone(),
-                            position: start_pos,
-                            color: current_fg,
-                            size: 12.0.into(),
-                            font: iced::Font::MONOSPACE,
-                            ..Text::default()
-                        });
-                        current_text.clear();
-                    }
+                        let break_span = color != current_fg || col as i32 != last_col + 1;
+                        if break_span && !current_text.is_empty() {
+                            frame.fill_text(Text {
+                                content: current_text.clone(),
+                                position: start_pos,
+                                color: current_fg,
+                                size: 12.0.into(),
+                                font: iced::Font::MONOSPACE,
+                                ..Text::default()
+                            });
+                            current_text.clear();
+                        }
 
-                    if current_text.is_empty() {
-                        start_pos = Point::new(x, y);
-                        current_fg = color;
-                    }
+                        if current_text.is_empty() {
+                            start_pos = Point::new(x, y);
+                            current_fg = color;
+                        }
 
-                    current_text.push(c);
-                    last_col = col as i32;
-                });
+                        current_text.push(c);
+                        last_col = col as i32;
+                    });
 
                 if !current_text.is_empty() {
                     frame.fill_text(Text {
