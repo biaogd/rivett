@@ -2,7 +2,8 @@ use crate::settings::{AppSettings, SettingsStorage};
 use crate::ui::style as ui_style;
 use iced::widget::{column, container, text};
 use iced::widget::{button, row};
-use iced::{Alignment, Element, Length, Settings, Theme};
+use iced::{Alignment, Element, Length, Settings, Subscription, Theme};
+use std::time::Instant;
 
 #[cfg(target_os = "macos")]
 fn set_accessory_activation_policy() {
@@ -30,6 +31,7 @@ struct SettingsApp {
     storage: SettingsStorage,
     settings: AppSettings,
     tab: SettingsTab,
+    parent_pid: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,17 +40,20 @@ enum Message {
     SelectTab(SettingsTab),
     FontSizeDecrease,
     FontSizeIncrease,
+    Tick(Instant),
 }
 
 impl SettingsApp {
     fn new() -> (Self, iced::Task<Message>) {
         let storage = SettingsStorage::new();
         let settings = storage.load_settings().unwrap_or_default();
+        let parent_pid = read_parent_pid();
         let app = Self {
             activation_set: false,
             storage,
             settings,
             tab: SettingsTab::Terminal,
+            parent_pid,
         };
         (app, iced::Task::done(Message::Init))
     }
@@ -71,9 +76,24 @@ impl SettingsApp {
                 let next = (self.settings.terminal_font_size + 1.0).min(24.0);
                 self.update_font_size(next);
             }
+            Message::Tick(_) => {
+                if let Some(pid) = self.parent_pid {
+                    if !is_parent_alive(pid) {
+                        return iced::exit();
+                    }
+                }
+            }
             Message::Init => {}
         }
         iced::Task::none()
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        if self.parent_pid.is_some() {
+            iced::time::every(std::time::Duration::from_secs(1)).map(Message::Tick)
+        } else {
+            Subscription::none()
+        }
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -155,6 +175,7 @@ pub fn run() -> iced::Result {
         .theme(|_: &SettingsApp| Theme::Light)
         .settings(Settings::default())
         .window_size((520.0, 360.0))
+        .subscription(SettingsApp::subscription)
         .run()
 }
 
@@ -171,4 +192,32 @@ fn tab_button(label: &str, active: bool, tab: SettingsTab) -> iced::Element<'_, 
         .style(style)
         .on_press(Message::SelectTab(tab))
         .into()
+}
+
+fn read_parent_pid() -> Option<u32> {
+    let mut args = std::env::args();
+    while let Some(arg) = args.next() {
+        if arg == "--parent-pid" {
+            return args.next()?.parse::<u32>().ok();
+        }
+        if let Some(value) = arg.strip_prefix("--parent-pid=") {
+            return value.parse::<u32>().ok();
+        }
+    }
+    None
+}
+
+#[cfg(unix)]
+fn is_parent_alive(pid: u32) -> bool {
+    let result = unsafe { libc::kill(pid as i32, 0) };
+    if result == 0 {
+        return true;
+    }
+    let err = std::io::Error::last_os_error();
+    err.raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(not(unix))]
+fn is_parent_alive(_pid: u32) -> bool {
+    true
 }

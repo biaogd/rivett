@@ -24,6 +24,7 @@ impl App {
             }
         }
 
+        let parent_pid = std::process::id().to_string();
         let exe = match std::env::current_exe() {
             Ok(exe) => exe,
             Err(e) => {
@@ -32,12 +33,17 @@ impl App {
             }
         };
 
-        if self.try_open_settings_bundle(&exe) {
+        if self.try_open_settings_bundle(&exe, &parent_pid) {
             self.settings_process = None;
             return;
         }
 
-        match Command::new(exe).arg("--settings").spawn() {
+        match Command::new(exe)
+            .arg("--settings")
+            .arg("--parent-pid")
+            .arg(parent_pid)
+            .spawn()
+        {
             Ok(child) => {
                 self.settings_process = Some(child);
             }
@@ -47,7 +53,7 @@ impl App {
         }
     }
 
-    fn try_open_settings_bundle(&self, exe: &std::path::Path) -> bool {
+    fn try_open_settings_bundle(&self, exe: &std::path::Path, parent_pid: &str) -> bool {
         #[cfg(target_os = "macos")]
         {
             if let Some(app_dir) = exe
@@ -62,6 +68,8 @@ impl App {
                         .arg(helper_app)
                         .arg("--args")
                         .arg("--settings")
+                        .arg("--parent-pid")
+                        .arg(parent_pid)
                         .status();
                     return status.map(|s| s.success()).unwrap_or(false);
                 }
