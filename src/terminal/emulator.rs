@@ -175,7 +175,8 @@ impl TerminalEmulator {
 
     pub fn render_line<F>(&self, line: usize, mut func: F)
     where
-        F: FnMut(usize, usize, char, alacritty_terminal::vte::ansi::Color, bool),
+        // line_idx, col_idx, cell, is_selected
+        F: FnMut(usize, usize, &alacritty_terminal::term::cell::Cell, bool),
     {
         use alacritty_terminal::index::{Column, Line, Point};
 
@@ -199,7 +200,7 @@ impl TerminalEmulator {
             let is_selected = selection
                 .map(|range| range.contains(point))
                 .unwrap_or(false);
-            func(col, line, cell.c, cell.fg, is_selected);
+            func(col, line, cell, is_selected);
         }
     }
 

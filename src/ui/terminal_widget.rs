@@ -242,16 +242,38 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 let mut last_col = -1;
 
                 self.emulator
-                    .render_line(line, |col, _line, c, fg, is_selected| {
+                    .render_line(line, |col, _line, cell, is_selected| {
+                        use alacritty_terminal::term::cell::Flags;
+
+                        // Skip wide char spacers (the second half of a wide char)
+                        if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                            return;
+                        }
+
+                        let c = cell.c;
+                        let fg = cell.fg;
+
                         let x = col as f32 * cell_width;
                         let y = line as f32 * cell_height;
                         let color = convert_color(fg);
 
                         // Only render selection background for non-space characters
+                        // For wide chars, we might want to render background for double width?
+                        // But since we skip spacer, we should probably render double width here if it's a wide char?
+                        // Alternatively, just render single width here, and since we skip the next col,
+                        // we won't draw background there?
+                        // Actually, if we skip render for spacer, we won't draw background for the second half.
+                        // We should probably draw double width background for WIDE_CHAR.
                         if is_selected && !c.is_whitespace() {
+                            let width = if cell.flags.contains(Flags::WIDE_CHAR) {
+                                cell_width * 2.0
+                            } else {
+                                cell_width
+                            };
+
                             frame.fill_rectangle(
                                 Point::new(x, y),
-                                Size::new(cell_width, cell_height),
+                                Size::new(width, cell_height),
                                 Color::from_rgba8(100, 100, 200, 0.5),
                             );
                         }
@@ -263,7 +285,10 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                                 position: start_pos,
                                 color: current_fg,
                                 size: 12.0.into(),
-                                font: iced::Font::MONOSPACE,
+                                font: iced::Font {
+                                    family: iced::font::Family::Name("Monaco"),
+                                    ..iced::Font::DEFAULT
+                                },
                                 ..Text::default()
                             });
                             current_text.clear();
@@ -275,6 +300,15 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         }
 
                         current_text.push(c);
+
+                        // If wide char, we still just mark this col.
+                        // The next col is spacer and will be skipped.
+                        // So last_col will lag behind by 1 when we hit the Char after the spacer.
+                        // e.g. Wide at 0. Spacer at 1. Next char at 2.
+                        // Draw 0. last_col=0.
+                        // Skip 1.
+                        // Draw 2. break_span check: 2 != 0 + 1. True. Span breaks.
+                        // This is actually FINE. It means wide chars might break batching, but that's safe.
                         last_col = col as i32;
                     });
 
@@ -284,7 +318,10 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         position: start_pos,
                         color: current_fg,
                         size: 12.0.into(),
-                        font: iced::Font::MONOSPACE,
+                        font: iced::Font {
+                            family: iced::font::Family::Name("Monaco"),
+                            ..iced::Font::DEFAULT
+                        },
                         ..Text::default()
                     });
                 }

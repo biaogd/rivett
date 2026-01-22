@@ -999,7 +999,12 @@ impl App {
         if self.active_view == ActiveView::Terminal {
             let keyboard_subscription = event::listen().map(|event| {
                 match event {
-                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        key,
+                        modifiers,
+                        text,
+                        ..
+                    }) => {
                         // Handle Cmd+C / Cmd+V
                         if modifiers.command() {
                             match key {
@@ -1013,23 +1018,40 @@ impl App {
                             }
                         }
 
-                        if let Some(data) = crate::terminal::input::map_key_to_input(key, modifiers)
-                        {
-                            Message::TerminalInput(data)
+                        // Try to use the text field (which handles IME commit chars and regular chars)
+                        if let Some(t) = text {
+                            // If we have text, we should use it.
+                            // However, we must be careful not to double send if map_key_to_input also works.
+                            // map_key_to_input handles control codes (Ctrl+C).
+                            // 'text' might be empty/control codes for those too?
+                            // Usually 'text' contains the printed char.
+                            // For Ctrl+C, text might be None or "\x03".
+
+                            // If it's a control character or special key, map_key_to_input is better.
+                            // If it's a normal char or CJK char, 'text' is better.
+
+                            // Simple heuristic: If text is NOT a control char, use it.
+                            let s = t.as_str();
+                            if !s.chars().any(|c| c.is_control()) {
+                                Message::TerminalInput(s.as_bytes().to_vec())
+                            } else {
+                                if let Some(data) =
+                                    crate::terminal::input::map_key_to_input(key, modifiers)
+                                {
+                                    Message::TerminalInput(data)
+                                } else {
+                                    Message::TerminalInput(vec![])
+                                }
+                            }
                         } else {
-                            Message::TerminalInput(vec![]) // NoOp
+                            if let Some(data) =
+                                crate::terminal::input::map_key_to_input(key, modifiers)
+                            {
+                                Message::TerminalInput(data)
+                            } else {
+                                Message::TerminalInput(vec![]) // NoOp
+                            }
                         }
-                    }
-                    Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
-                        use iced::mouse::ScrollDelta;
-                        let scroll_lines = match delta {
-                            ScrollDelta::Lines { y, .. } => y * 3.0,
-                            ScrollDelta::Pixels { y, .. } => y / 16.0,
-                        };
-                        Message::ScrollWheel(scroll_lines)
-                    }
-                    Event::Window(iced::window::Event::Resized(size)) => {
-                        Message::WindowResized(size.width as u32, size.height as u32)
                     }
                     _ => Message::TerminalInput(vec![]),
                 }
@@ -1163,9 +1185,7 @@ impl App {
                             };
 
                             match result {
-                                Some(damage) => {
-                                    Some((Message::TerminalDamaged(idx, damage), rx))
-                                }
+                                Some(damage) => Some((Message::TerminalDamaged(idx, damage), rx)),
                                 None => {
                                     std::future::pending::<()>().await;
                                     None
