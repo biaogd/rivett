@@ -990,6 +990,7 @@ impl App {
     fn subscription(&self) -> iced::Subscription<Message> {
         use iced::event::{self, Event};
         use iced::keyboard;
+        use iced::window;
 
         let mut subs = Vec::new();
 
@@ -999,6 +1000,9 @@ impl App {
         if self.active_view == ActiveView::Terminal {
             let keyboard_subscription = event::listen().map(|event| {
                 match event {
+                    Event::Window(window::Event::Resized(size)) => {
+                        Message::WindowResized(size.width as u32, size.height as u32)
+                    }
                     Event::Keyboard(keyboard::Event::KeyPressed {
                         key,
                         modifiers,
@@ -1008,52 +1012,42 @@ impl App {
                         // Handle Cmd+C / Cmd+V
                         if modifiers.command() {
                             match key {
-                                keyboard::Key::Character(c) if c.as_str() == "c" => {
+                                keyboard::Key::Character(ref c) if c.as_str() == "c" => {
                                     return Message::Copy;
                                 }
-                                keyboard::Key::Character(c) if c.as_str() == "v" => {
+                                keyboard::Key::Character(ref c) if c.as_str() == "v" => {
                                     return Message::Paste;
                                 }
                                 _ => {}
                             }
                         }
 
+                        // Handle Cmd+T for new local tab
+                        if modifiers.command()
+                            && matches!(key, keyboard::Key::Character(ref c) if c.as_str() == "t")
+                        {
+                            return Message::CreateLocalTab;
+                        }
+
                         // Try to use the text field (which handles IME commit chars and regular chars)
-                        if let Some(t) = text {
-                            // If we have text, we should use it.
-                            // However, we must be careful not to double send if map_key_to_input also works.
-                            // map_key_to_input handles control codes (Ctrl+C).
-                            // 'text' might be empty/control codes for those too?
-                            // Usually 'text' contains the printed char.
-                            // For Ctrl+C, text might be None or "\x03".
+                        // If it's a control character or special key, map_key_to_input is better.
+                        // If it's a normal char or CJK char, 'text' is better.
 
-                            // If it's a control character or special key, map_key_to_input is better.
-                            // If it's a normal char or CJK char, 'text' is better.
-
-                            // Simple heuristic: If text is NOT a control char, use it.
-                            let s = t.as_str();
-                            if !s.chars().any(|c| c.is_control()) {
-                                Message::TerminalInput(s.as_bytes().to_vec())
-                            } else {
-                                if let Some(data) =
-                                    crate::terminal::input::map_key_to_input(key, modifiers)
-                                {
-                                    Message::TerminalInput(data)
-                                } else {
-                                    Message::TerminalInput(vec![])
-                                }
-                            }
+                        // Simple heuristic: If text is NOT empty and NOT a control char, use it.
+                        let s = text.as_ref().map(|t| t.as_str()).unwrap_or("");
+                        if !s.is_empty() && !s.chars().any(|c| c.is_control()) {
+                            Message::TerminalInput(s.as_bytes().to_vec())
                         } else {
                             if let Some(data) =
                                 crate::terminal::input::map_key_to_input(key, modifiers)
                             {
                                 Message::TerminalInput(data)
                             } else {
-                                Message::TerminalInput(vec![]) // NoOp
+                                Message::Ignore
                             }
                         }
                     }
-                    _ => Message::TerminalInput(vec![]),
+                    _ => Message::Ignore,
                 }
             });
             subs.push(keyboard_subscription);
