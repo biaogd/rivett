@@ -766,9 +766,7 @@ impl App {
             }
             Message::ImeFocusChanged(focused) => {
                 self.ime_focused = focused;
-                if self.active_view == ActiveView::Terminal
-                    && !self.show_quick_connect
-                    && !focused
+                if self.active_view == ActiveView::Terminal && !self.show_quick_connect && !focused
                 {
                     commands.push(self.focus_terminal_ime());
                 }
@@ -792,9 +790,15 @@ impl App {
                         ..
                     }) => {
                         let message = {
-                            if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace)) {
+                            if matches!(
+                                key,
+                                iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace)
+                            ) {
                                 Message::TerminalInput(vec![0x7f])
-                            } else if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete)) {
+                            } else if matches!(
+                                key,
+                                iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete)
+                            ) {
                                 Message::TerminalInput(vec![0x1b, b'[', b'3', b'~'])
                             } else if modifiers.command() {
                                 match key {
@@ -1020,6 +1024,15 @@ impl App {
             ),
         };
         if self.active_view == ActiveView::Terminal && !self.show_quick_connect {
+            let (cursor_col, cursor_row) = self
+                .tabs
+                .get(self.active_tab)
+                .map(|tab| tab.emulator.cursor_position())
+                .unwrap_or((0, 0));
+            let cursor_x = cursor_col as f32 * terminal_widget::CELL_WIDTH;
+            let cursor_y =
+                cursor_row as f32 * terminal_widget::CELL_HEIGHT + terminal_widget::CELL_HEIGHT;
+
             let ime_input = text_input("", &self.ime_buffer)
                 .on_input(Message::ImeBufferChanged)
                 .id(self.ime_input_id.clone())
@@ -1027,9 +1040,19 @@ impl App {
                 .padding(0)
                 .width(Length::Fixed(1.0))
                 .style(ui_style::ime_input);
-            let ime_layer = container(ime_input)
-                .width(Length::Shrink)
-                .height(Length::Shrink);
+            let ime_layer = column![
+                Space::new()
+                    .width(Length::Fixed(1.0))
+                    .height(Length::Fixed(cursor_y)),
+                row![
+                    Space::new()
+                        .width(Length::Fixed(cursor_x))
+                        .height(Length::Fixed(1.0)),
+                    ime_input
+                ]
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill);
             content = stack![content, ime_layer].into();
         }
 
