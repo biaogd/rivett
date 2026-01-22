@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use crate::core::SessionManager;
 use crate::core::session::Session;
 use crate::platform::PlatformServices;
+use crate::settings::{AppSettings, SettingsStorage};
 use crate::session::{SessionConfig, SessionStorage};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::Read;
@@ -37,6 +38,9 @@ pub struct App {
     active_view: ActiveView,
     saved_sessions: Vec<SessionConfig>,
     session_storage: SessionStorage,
+    settings_storage: SettingsStorage,
+    app_settings: AppSettings,
+    terminal_font_size: f32,
     editing_session: Option<SessionConfig>,
     // Form state
     form_name: String,
@@ -69,6 +73,8 @@ impl App {
             eprintln!("Failed to load sessions: {}", e);
             Vec::new()
         });
+        let settings_storage = SettingsStorage::new();
+        let app_settings = settings_storage.load_settings().unwrap_or_default();
 
         let (main_window, open_task) = iced::window::open(iced::window::Settings::default());
 
@@ -84,6 +90,9 @@ impl App {
                 active_view: ActiveView::SessionManager,
                 saved_sessions,
                 session_storage: storage,
+                settings_storage,
+                terminal_font_size: app_settings.terminal_font_size,
+                app_settings,
                 editing_session: None,
                 // Form defaults
                 form_name: String::new(),
@@ -121,6 +130,48 @@ impl App {
 
     fn focus_terminal_ime(&self) -> Task<Message> {
         iced::widget::operation::focus(self.ime_input_id.clone())
+    }
+
+    fn cell_width(&self) -> f32 {
+        terminal_widget::cell_width(self.terminal_font_size)
+    }
+
+    fn cell_height(&self) -> f32 {
+        terminal_widget::cell_height(self.terminal_font_size)
+    }
+
+    fn reload_settings(&mut self) {
+        let loaded = self
+            .settings_storage
+            .load_settings()
+            .unwrap_or_default();
+        if loaded != self.app_settings {
+            self.app_settings = loaded.clone();
+            self.terminal_font_size = loaded.terminal_font_size;
+            for tab in &mut self.tabs {
+                tab.mark_full_damage();
+            }
+        }
+    }
+
+    fn recalc_terminal_size(&self) -> Task<Message> {
+        let width = self.window_width;
+        let height = self.window_height;
+        if width == 0 || height == 0 {
+            return Task::none();
+        }
+
+        let sidebar_width = if self.show_menu { 200.0 } else { 0.0 };
+        let h_padding = 24.0;
+        let v_padding = 120.0;
+
+        let term_w = (width as f32 - sidebar_width - h_padding).max(0.0);
+        let term_h = (height as f32 - v_padding).max(0.0);
+
+        let cols = (term_w / self.cell_width()) as usize;
+        let rows = (term_h / self.cell_height()) as usize;
+
+        Task::done(Message::TerminalResize(cols, rows))
     }
 
     fn open_settings_window(&mut self) {
@@ -329,10 +380,8 @@ impl App {
                                                 (width as f32 - sidebar_width - h_padding).max(0.0);
                                             let term_h = (height as f32 - v_padding).max(0.0);
 
-                                            let cols =
-                                                (term_w / terminal_widget::CELL_WIDTH) as usize;
-                                            let rows =
-                                                (term_h / terminal_widget::CELL_HEIGHT) as usize;
+                                            let cols = (term_w / self.cell_width()) as usize;
+                                            let rows = (term_h / self.cell_height()) as usize;
 
                                             commands.push(Task::done(Message::TerminalResize(
                                                 cols, rows,
@@ -384,8 +433,8 @@ impl App {
                     let term_w = (width as f32 - sidebar_width - h_padding).max(0.0);
                     let term_h = (height as f32 - v_padding).max(0.0);
 
-                    let cols = (term_w / terminal_widget::CELL_WIDTH) as usize;
-                    let rows = (term_h / terminal_widget::CELL_HEIGHT) as usize;
+                    let cols = (term_w / self.cell_width()) as usize;
+                    let rows = (term_h / self.cell_height()) as usize;
 
                     println!("Menu toggled. Resizing to {}x{}", cols, rows);
                     return Task::done(Message::TerminalResize(cols, rows));
@@ -695,8 +744,8 @@ impl App {
                             let term_w = (width as f32 - sidebar_width - h_padding).max(0.0);
                             let term_h = (height as f32 - v_padding).max(0.0);
 
-                            let cols = (term_w / terminal_widget::CELL_WIDTH) as usize;
-                            let rows = (term_h / terminal_widget::CELL_HEIGHT) as usize;
+                            let cols = (term_w / self.cell_width()) as usize;
+                            let rows = (term_h / self.cell_height()) as usize;
 
                             return Task::done(Message::TerminalResize(cols, rows));
                         }
@@ -794,8 +843,8 @@ impl App {
                 let term_w = (width as f32 - sidebar_width - h_padding).max(0.0);
                 let term_h = (height as f32 - v_padding).max(0.0);
 
-                let cols = (term_w / terminal_widget::CELL_WIDTH) as usize;
-                let rows = (term_h / terminal_widget::CELL_HEIGHT) as usize;
+                let cols = (term_w / self.cell_width()) as usize;
+                let rows = (term_h / self.cell_height()) as usize;
 
                 self.pending_resize = Some((cols, rows, std::time::Instant::now()));
                 return Task::done(Message::TerminalResize(cols, rows));
@@ -902,10 +951,12 @@ impl App {
                     match event {
                         iced::event::Event::Window(iced::window::Event::Focused) => {
                             self.ime_focused = false;
+                            self.reload_settings();
                             if self.active_view == ActiveView::Terminal
                                 && !self.show_quick_connect
                             {
                                 commands.push(self.focus_terminal_ime());
+                                commands.push(self.recalc_terminal_size());
                             }
                             return Task::batch(commands);
                         }
@@ -1192,9 +1243,12 @@ impl App {
         use iced::widget::{Space, button, column, container, row, stack, text_input};
 
         let mut content = match self.active_view {
-            ActiveView::Terminal => {
-                views::terminal::render(&self.tabs, self.active_tab, &self.ime_preedit)
-            }
+            ActiveView::Terminal => views::terminal::render(
+                &self.tabs,
+                self.active_tab,
+                &self.ime_preedit,
+                self.terminal_font_size,
+            ),
             ActiveView::SessionManager => views::session_manager::render(
                 &self.saved_sessions,
                 self.editing_session.as_ref(),
@@ -1214,9 +1268,8 @@ impl App {
                 .get(self.active_tab)
                 .map(|tab| tab.emulator.cursor_position())
                 .unwrap_or((0, 0));
-            let cursor_x = cursor_col as f32 * terminal_widget::CELL_WIDTH;
-            let cursor_y =
-                cursor_row as f32 * terminal_widget::CELL_HEIGHT + terminal_widget::CELL_HEIGHT;
+            let cursor_x = cursor_col as f32 * self.cell_width();
+            let cursor_y = cursor_row as f32 * self.cell_height() + self.cell_height();
 
             let ime_input = text_input("", &self.ime_buffer)
                 .on_input(Message::ImeBufferChanged)

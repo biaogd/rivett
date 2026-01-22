@@ -1,5 +1,6 @@
 mod core;
 mod platform;
+mod settings;
 mod settings_app;
 mod session;
 mod ssh;

@@ -9,6 +9,7 @@ pub fn render<'a>(
     tabs: &'a [SessionTab],
     active_tab: usize,
     ime_preedit: &'a str,
+    font_size: f32,
 ) -> Element<'a, Message> {
     if tabs.is_empty() {
         return column![
@@ -108,8 +109,8 @@ pub fn render<'a>(
             .into()
         }
         _ => iced::widget::responsive(move |size| {
-            let _cols = (size.width / terminal_widget::CELL_WIDTH) as usize;
-            let _rows = (size.height / terminal_widget::CELL_HEIGHT) as usize;
+            let _cols = (size.width / terminal_widget::cell_width(font_size)) as usize;
+            let _rows = (size.height / terminal_widget::cell_height(font_size)) as usize;
 
             container(
                 terminal_widget::TerminalView::new(
@@ -121,6 +122,7 @@ pub fn render<'a>(
                     } else {
                         Some(ime_preedit)
                     },
+                    font_size,
                 )
                 .view(),
             )

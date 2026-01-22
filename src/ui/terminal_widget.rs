@@ -5,14 +5,23 @@ use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
 use crate::terminal::TerminalEmulator;
 use crate::ui::Message;
 
-pub const CELL_WIDTH: f32 = 7.2;
-pub const CELL_HEIGHT: f32 = 16.0;
+pub const BASE_CELL_WIDTH: f32 = 7.2;
+pub const BASE_CELL_HEIGHT: f32 = 16.0;
+
+pub fn cell_width(font_size: f32) -> f32 {
+    BASE_CELL_WIDTH * (font_size / 12.0)
+}
+
+pub fn cell_height(font_size: f32) -> f32 {
+    BASE_CELL_HEIGHT * (font_size / 12.0)
+}
 
 pub struct TerminalView<'a> {
     emulator: TerminalEmulator,
     chrome_cache: &'a Cache,
     line_caches: &'a [Cache],
     preedit: Option<&'a str>,
+    font_size: f32,
 }
 
 impl<'a> TerminalView<'a> {
@@ -21,12 +30,14 @@ impl<'a> TerminalView<'a> {
         chrome_cache: &'a Cache,
         line_caches: &'a [Cache],
         preedit: Option<&'a str>,
+        font_size: f32,
     ) -> Self {
         Self {
             emulator,
             chrome_cache,
             line_caches,
             preedit,
+            font_size,
         }
     }
 
@@ -78,8 +89,8 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 mouse::Event::ButtonPressed(mouse::Button::Left) => {
                     if is_over {
                         if let Some(position) = cursor.position_in(bounds) {
-                            let col = (position.x / CELL_WIDTH) as usize;
-                            let line = (position.y / CELL_HEIGHT) as usize;
+                            let col = (position.x / cell_width(self.font_size)) as usize;
+                            let line = (position.y / cell_height(self.font_size)) as usize;
 
                             // let mut emulator = self.emulator.clone();
 
@@ -113,8 +124,8 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 mouse::Event::CursorMoved { .. } => {
                     if state.is_dragging && is_over {
                         if let Some(position) = cursor.position_in(bounds) {
-                            let col = (position.x / CELL_WIDTH) as usize;
-                            let line = (position.y / CELL_HEIGHT) as usize;
+                            let col = (position.x / cell_width(self.font_size)) as usize;
+                            let line = (position.y / cell_height(self.font_size)) as usize;
 
                             // let mut emulator = self.emulator.clone();
                             // emulator.on_mouse_drag(col, line);
@@ -218,8 +229,8 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
         });
         geometries.push(chrome);
 
-        let cell_width = CELL_WIDTH;
-        let cell_height = CELL_HEIGHT;
+        let cell_width = cell_width(self.font_size);
+        let cell_height = cell_height(self.font_size);
         let (cursor_col, cursor_row) = self.emulator.cursor_position();
         let preedit_len = self.preedit.map(|s| s.chars().count()).unwrap_or(0);
         let (_, _, screen_lines) = self.emulator.get_scroll_state();
@@ -277,7 +288,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                                 content: current_text.clone(),
                                 position: start_pos,
                                 color: current_fg,
-                                size: 12.0.into(),
+                                size: self.font_size.into(),
                                 font: iced::Font {
                                     family: iced::font::Family::Name("Monaco"),
                                     ..iced::Font::DEFAULT
@@ -310,7 +321,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         content: current_text,
                         position: start_pos,
                         color: current_fg,
-                        size: 12.0.into(),
+                        size: self.font_size.into(),
                         font: iced::Font {
                             family: iced::font::Family::Name("Monaco"),
                             ..iced::Font::DEFAULT
@@ -341,7 +352,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                     content: preedit.to_string(),
                     position: Point::new(cursor_col as f32 * cell_width, cursor_y),
                     color: Color::from_rgb8(30, 64, 175),
-                    size: 12.0.into(),
+                    size: self.font_size.into(),
                     font: iced::Font {
                         family: iced::font::Family::Name("Monaco"),
                         ..iced::Font::DEFAULT
