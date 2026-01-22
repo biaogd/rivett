@@ -66,6 +66,8 @@ pub enum Message {
     TerminalMouseDoubleClick(usize, usize),
     TerminalResize(usize, usize),
     WindowResized(u32, u32),
+    WindowOpened(iced::window::Id),
+    WindowClosed(iced::window::Id),
     ScrollWheel(f32),         // delta in lines
     RetryConnection(usize),   // tab index to retry
     EditSessionConfig(usize), // tab index to edit
@@ -75,7 +77,7 @@ pub enum Message {
     ImeBufferChanged(String),
     ImeFocusChanged(bool),
     ImePaste,
-    RuntimeEvent(iced::event::Event),
+    RuntimeEvent(iced::event::Event, iced::window::Id),
     Ignore,
     Tick(std::time::Instant),
 }

@@ -5,11 +5,15 @@ use iced::{Alignment, Element, Length, Padding};
 
 pub fn render<'a>(active_view: ActiveView) -> Element<'a, Message> {
     // Load SVG icons
-    let grid_svg = iced::widget::svg(iced::widget::svg::Handle::from_path("resources/grid.svg"))
+    let grid_svg = iced::widget::svg(iced::widget::svg::Handle::from_memory(
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/grid.svg")).as_slice(),
+    ))
         .width(Length::Fixed(16.0))
         .height(Length::Fixed(16.0));
 
-    let dir_svg = iced::widget::svg(iced::widget::svg::Handle::from_path("resources/dir.svg"))
+    let dir_svg = iced::widget::svg(iced::widget::svg::Handle::from_memory(
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/dir.svg")).as_slice(),
+    ))
         .width(Length::Fixed(16.0))
         .height(Length::Fixed(16.0));
 

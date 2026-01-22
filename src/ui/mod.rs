@@ -1,7 +1,7 @@
 mod components;
 mod message;
 mod state;
-mod style;
+pub mod style;
 mod terminal_widget;
 mod views;
 
@@ -15,6 +15,7 @@ use crate::platform::PlatformServices;
 use crate::session::{SessionConfig, SessionStorage};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::Read;
+use std::process::Command;
 use style as ui_style;
 
 // Re-export types from sub-modules
@@ -30,6 +31,8 @@ pub struct App {
     tabs: Vec<SessionTab>,
     active_tab: usize,
     show_menu: bool,
+    main_window: Option<iced::window::Id>,
+    settings_process: Option<std::process::Child>,
     // Session management
     active_view: ActiveView,
     saved_sessions: Vec<SessionConfig>,
@@ -67,6 +70,8 @@ impl App {
             Vec::new()
         });
 
+        let (main_window, open_task) = iced::window::open(iced::window::Settings::default());
+
         (
             Self {
                 sessions: SessionManager::new(),
@@ -74,6 +79,8 @@ impl App {
                 tabs: Vec::new(),
                 active_tab: 0,
                 show_menu: true,
+                main_window: Some(main_window),
+                settings_process: None,
                 active_view: ActiveView::SessionManager,
                 saved_sessions,
                 session_storage: storage,
@@ -100,11 +107,11 @@ impl App {
                 ime_ignore_next_input: false,
                 pending_resize: None,
             },
-            Task::none(), // Removed Command::perform(Self::connect_to_localhost(), ...)
+            open_task.map(Message::WindowOpened), // Open the main window
         )
     }
 
-    pub fn title(&self) -> String {
+    pub fn title(&self, _window: iced::window::Id) -> String {
         if self.tabs.is_empty() {
             "SSH GUI - No Sessions".to_string()
         } else {
@@ -114,6 +121,64 @@ impl App {
 
     fn focus_terminal_ime(&self) -> Task<Message> {
         iced::widget::operation::focus(self.ime_input_id.clone())
+    }
+
+    fn open_settings_window(&mut self) {
+        if let Some(child) = &mut self.settings_process {
+            if let Ok(None) = child.try_wait() {
+                return;
+            }
+        }
+
+        let exe = match std::env::current_exe() {
+            Ok(exe) => exe,
+            Err(e) => {
+                eprintln!("Failed to locate current executable: {}", e);
+                return;
+            }
+        };
+
+        if self.try_open_settings_bundle(&exe) {
+            self.settings_process = None;
+            return;
+        }
+
+        match Command::new(exe).arg("--settings").spawn() {
+            Ok(child) => {
+                self.settings_process = Some(child);
+            }
+            Err(e) => {
+                eprintln!("Failed to open settings window: {}", e);
+            }
+        }
+    }
+
+    fn try_open_settings_bundle(&self, exe: &std::path::Path) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(app_dir) = exe
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+            {
+                let helper_app = app_dir.with_file_name("SSH GUI Settings.app");
+                if helper_app.exists() {
+                    let status = Command::new("open")
+                        .arg("-a")
+                        .arg(helper_app)
+                        .arg("--args")
+                        .arg("--settings")
+                        .status();
+                    return status.map(|s| s.success()).unwrap_or(false);
+                }
+            }
+            false
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = exe;
+            false
+        }
     }
 
     fn bracketed_paste_bytes(&self, text: &str) -> Vec<u8> {
@@ -341,8 +406,9 @@ impl App {
                 // TODO: Show port forwarding manager
             }
             Message::ShowSettings => {
-                self.show_menu = false;
-                // TODO: Show settings panel
+                self.show_quick_connect = false;
+                self.session_menu_open = None;
+                self.open_settings_window();
             }
             Message::CreateNewSession => {
                 self.editing_session = Some(SessionConfig::new(
@@ -734,6 +800,13 @@ impl App {
                 self.pending_resize = Some((cols, rows, std::time::Instant::now()));
                 return Task::done(Message::TerminalResize(cols, rows));
             }
+            Message::WindowOpened(_id) => {}
+            Message::WindowClosed(id) => {
+                if Some(id) == self.main_window {
+                    self.main_window = None;
+                    return iced::exit();
+                }
+            }
             Message::ScrollWheel(delta) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     if delta.abs() > 0.001 {
@@ -824,8 +897,29 @@ impl App {
                     commands.push(self.focus_terminal_ime());
                 }
             }
-            Message::RuntimeEvent(event) => {
-                if self.active_view != ActiveView::Terminal || self.show_quick_connect {
+            Message::RuntimeEvent(event, window) => {
+                if Some(window) == self.main_window {
+                    match event {
+                        iced::event::Event::Window(iced::window::Event::Focused) => {
+                            self.ime_focused = false;
+                            if self.active_view == ActiveView::Terminal
+                                && !self.show_quick_connect
+                            {
+                                commands.push(self.focus_terminal_ime());
+                            }
+                            return Task::batch(commands);
+                        }
+                        iced::event::Event::Window(iced::window::Event::Unfocused) => {
+                            self.ime_focused = false;
+                            return Task::none();
+                        }
+                        _ => {}
+                    }
+                }
+                if Some(window) != self.main_window
+                    || self.active_view != ActiveView::Terminal
+                    || self.show_quick_connect
+                {
                     return Task::none();
                 }
 
@@ -958,7 +1052,14 @@ impl App {
                     println!("UI: Tab {} ignoring input (invalid index)", self.active_tab);
                 }
             }
-            Message::Tick(now) => {
+            Message::Tick(_now) => {
+                crate::platform::maybe_setup_macos_menu();
+                if crate::platform::take_settings_request() {
+                    self.show_quick_connect = false;
+                    self.session_menu_open = None;
+                    self.open_settings_window();
+                }
+
                 // Spinner animation
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     if let SessionState::Connecting(_) = tab.state {
@@ -967,7 +1068,9 @@ impl App {
                 }
 
                 if let Some((cols, rows, at)) = self.pending_resize {
-                    if now.duration_since(at) > std::time::Duration::from_millis(120) {
+                    if std::time::Instant::now().duration_since(at)
+                        > std::time::Duration::from_millis(120)
+                    {
                         self.pending_resize = None;
                         return Task::done(Message::TerminalResize(cols, rows));
                     }
@@ -975,10 +1078,10 @@ impl App {
 
                 if self.active_view == ActiveView::Terminal
                     && !self.show_quick_connect
-                    && now.duration_since(self.last_ime_focus_check)
+                    && std::time::Instant::now().duration_since(self.last_ime_focus_check)
                         > std::time::Duration::from_millis(120)
                 {
-                    self.last_ime_focus_check = now;
+                    self.last_ime_focus_check = std::time::Instant::now();
                     commands.push(
                         iced::widget::operation::is_focused(self.ime_input_id.clone())
                             .map(Message::ImeFocusChanged),
@@ -1084,7 +1187,7 @@ impl App {
         Task::batch(commands)
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view(&self, _window: iced::window::Id) -> Element<'_, Message> {
         use iced::widget::container::transparent;
         use iced::widget::{Space, button, column, container, row, stack, text_input};
 
@@ -1252,11 +1355,12 @@ impl App {
         }
     }
 
-    pub fn run(_settings: Settings) -> iced::Result {
-        iced::application(App::new, App::update, App::view)
+    pub fn run(settings: Settings) -> iced::Result {
+        iced::daemon(App::new, App::update, App::view)
             .title(App::title)
-            .theme(|_: &App| Theme::Light)
+            .theme(|_: &App, _| Theme::Light)
             .subscription(App::subscription)
+            .settings(settings)
             .run()
     }
 
@@ -1272,8 +1376,21 @@ impl App {
         subs.push(iced::time::every(std::time::Duration::from_millis(16)).map(Message::Tick));
 
         if self.active_view == ActiveView::Terminal && !self.show_quick_connect {
-            subs.push(event::listen().map(Message::RuntimeEvent));
+            if let Some(main_window) = self.main_window {
+                let events = event::listen_with(|event, _status, id| Some((id, event)))
+                    .with(main_window)
+                    .filter_map(|(target, (id, event))| {
+                        if id == target {
+                            Some(Message::RuntimeEvent(event, id))
+                        } else {
+                            None
+                        }
+                    });
+                subs.push(events);
+            }
         }
+
+        subs.push(iced::window::close_events().map(Message::WindowClosed));
 
         // Ticking subscription if any tab is connecting
         let any_connecting = self

@@ -12,16 +12,14 @@ pub fn render<'a>(
 ) -> Element<'a, Message> {
     let current_tab = tabs.get(active_tab);
     let status_left = if let Some(tab) = current_tab {
-        if active_view == ActiveView::Terminal {
-            format!("{}  ● Connected 120ms", tab.title)
-        } else {
-            "Session Manager".to_string()
+        match active_view {
+            ActiveView::Terminal => format!("{}  ● Connected 120ms", tab.title),
+            ActiveView::SessionManager => "Session Manager".to_string(),
         }
     } else {
-        if active_view == ActiveView::SessionManager {
-            "Session Manager".to_string()
-        } else {
-            "No active session".to_string()
+        match active_view {
+            ActiveView::SessionManager => "Session Manager".to_string(),
+            ActiveView::Terminal => "No active session".to_string(),
         }
     };
 
