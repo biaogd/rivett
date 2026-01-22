@@ -15,12 +15,12 @@ pub fn render<'a>(active_view: ActiveView) -> Element<'a, Message> {
 
     // Sessions button (highlighted when in SessionManager view)
     let sessions_btn = button(
-        row![grid_svg, text("Sessions").size(14),]
+        row![grid_svg, text("Sessions").size(13),]
             .spacing(10)
             .align_y(Alignment::Center),
     )
     .width(Length::Fill)
-    .padding([10, 12])
+    .padding([8, 12])
     .style(if active_view == ActiveView::SessionManager {
         ui_style::sidebar_button_active
     } else {
@@ -30,22 +30,22 @@ pub fn render<'a>(active_view: ActiveView) -> Element<'a, Message> {
 
     // SFTP button (would be highlighted when in SFTP view)
     let sftp_btn = button(
-        row![dir_svg, text("SFTP").size(14),]
+        row![dir_svg, text("SFTP").size(13),]
             .spacing(10)
             .align_y(Alignment::Center),
     )
     .width(Length::Fill)
-    .padding([10, 12])
+    .padding([8, 12])
     .style(ui_style::sidebar_button_inactive) // Always inactive for now
     .on_press(Message::Ignore); // Not implemented yet
 
     // RECENT section header
     let recent_header = container(
         text("RECENT")
-            .size(11)
+            .size(10)
             .style(ui_style::sidebar_section_header),
     )
-    .padding(Padding::new(12.0).top(16.0).bottom(8.0));
+    .padding(Padding::new(12.0).top(14.0).bottom(6.0));
 
     // Recent sessions list (placeholder for now)
     let recent_items = column![
@@ -57,7 +57,7 @@ pub fn render<'a>(active_view: ActiveView) -> Element<'a, Message> {
 
     // Assemble sidebar
     column![
-        container("").height(12.0),
+        container("").height(10.0),
         sessions_btn,
         container("").height(4.0),
         sftp_btn,
@@ -72,14 +72,14 @@ pub fn render<'a>(active_view: ActiveView) -> Element<'a, Message> {
 fn sidebar_recent_item<'a>(name: &'a str) -> Element<'a, Message> {
     button(
         row![
-            text(">_").size(12).width(Length::Fixed(20.0)),
-            text(name).size(13),
+            text(">_").size(11).width(Length::Fixed(18.0)),
+            text(name).size(12),
         ]
         .spacing(10)
         .align_y(Alignment::Center),
     )
     .width(Length::Fill)
-    .padding([8, 12])
+    .padding([6, 12])
     .style(ui_style::sidebar_recent_item)
     .on_press(Message::Ignore) // Will connect to session later
     .into()

@@ -49,6 +49,7 @@ pub struct App {
     // Quick Connect
     show_quick_connect: bool,
     quick_connect_query: String,
+    session_menu_open: Option<String>,
     ime_buffer: String,
     ime_input_id: iced::widget::Id,
     ime_focused: bool,
@@ -90,6 +91,7 @@ impl App {
                 last_error: None,
                 show_quick_connect: false,
                 quick_connect_query: String::new(),
+                session_menu_open: None,
                 ime_buffer: String::new(),
                 ime_input_id: iced::widget::Id::new("terminal-ime-input"),
                 ime_focused: false,
@@ -254,7 +256,7 @@ impl App {
                                         let height = self.window_height;
                                         if width > 0 && height > 0 {
                                             let sidebar_width =
-                                                if self.show_menu { 180.0 } else { 0.0 };
+                                                if self.show_menu { 200.0 } else { 0.0 };
                                             let h_padding = 24.0;
                                             let v_padding = 120.0;
 
@@ -310,7 +312,7 @@ impl App {
                 let height = self.window_height;
 
                 if width > 0 && height > 0 {
-                    let sidebar_width = if self.show_menu { 180.0 } else { 0.0 };
+                    let sidebar_width = if self.show_menu { 200.0 } else { 0.0 };
                     let h_padding = 24.0;
                     let v_padding = 120.0;
 
@@ -358,6 +360,7 @@ impl App {
                 self.validation_error = None;
             }
             Message::EditSession(id) => {
+                self.session_menu_open = None;
                 if let Some(session) = self.saved_sessions.iter().find(|s| s.id == id).cloned() {
                     self.form_name = session.name.clone();
                     self.form_host = session.host.clone();
@@ -378,6 +381,7 @@ impl App {
                 }
             }
             Message::DeleteSession(id) => {
+                self.session_menu_open = None;
                 if let Err(e) = self
                     .session_storage
                     .delete_session(&id, &mut self.saved_sessions)
@@ -386,6 +390,7 @@ impl App {
                 }
             }
             Message::ConnectToSession(id) => {
+                self.session_menu_open = None;
                 if let Some(session) = self.saved_sessions.iter().find(|s| s.id == id) {
                     let name = session.name.clone();
                     let host = session.host.clone();
@@ -617,7 +622,7 @@ impl App {
                         let width = self.window_width;
                         let height = self.window_height;
                         if width > 0 && height > 0 {
-                            let sidebar_width = if self.show_menu { 180.0 } else { 0.0 };
+                            let sidebar_width = if self.show_menu { 200.0 } else { 0.0 };
                             let h_padding = 24.0;
                             let v_padding = 120.0;
 
@@ -715,7 +720,7 @@ impl App {
                 self.window_width = width;
                 self.window_height = height;
 
-                let sidebar_width = if self.show_menu { 180.0 } else { 0.0 };
+                let sidebar_width = if self.show_menu { 200.0 } else { 0.0 };
                 // Approximate padding/chrome
                 let h_padding = 24.0;
                 let v_padding = 120.0;
@@ -752,6 +757,16 @@ impl App {
             Message::SelectQuickConnectSession(name) => {
                 self.show_quick_connect = false;
                 return Task::perform(async move { name }, Message::ConnectToSession);
+            }
+            Message::ToggleSessionMenu(id) => {
+                if self.session_menu_open.as_deref() == Some(id.as_str()) {
+                    self.session_menu_open = None;
+                } else {
+                    self.session_menu_open = Some(id);
+                }
+            }
+            Message::CloseSessionMenu => {
+                self.session_menu_open = None;
             }
             Message::ImeBufferChanged(value) => {
                 if self.ime_ignore_next_input {
@@ -1087,6 +1102,7 @@ impl App {
                 &self.form_password,
                 self.auth_method_password,
                 self.validation_error.as_ref(),
+                self.session_menu_open.as_deref(),
             ),
         };
         if self.active_view == ActiveView::Terminal && !self.show_quick_connect {
@@ -1153,7 +1169,7 @@ impl App {
 
         let main_view: Element<'_, Message> = if self.show_menu {
             let left_menu = container(views::sidebar::render(self.active_view))
-                .width(Length::Fixed(180.0))
+                .width(Length::Fixed(200.0))
                 .height(Length::Fill)
                 .padding(12)
                 .style(ui_style::dropdown_menu);

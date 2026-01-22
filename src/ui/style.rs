@@ -6,44 +6,44 @@ use iced::{Background, Border, Color, Shadow, Theme, Vector};
 #[allow(dead_code)]
 // Background colors - Light theme
 fn color_bg() -> Color {
-    Color::from_rgb8(248, 250, 252) // Very light slate background
+    Color::from_rgb8(245, 245, 247) // macOS window background
 }
 
 // Panel colors with layering
 fn color_panel() -> Color {
-    Color::from_rgb8(255, 255, 255) // Pure white panels
+    Color::from_rgb8(255, 255, 255)
 }
 
 fn color_panel_elevated() -> Color {
-    Color::from_rgba8(248, 250, 252, 0.9) // Very light slate with transparency
+    Color::from_rgb8(249, 250, 251)
 }
 
 fn color_panel_alt() -> Color {
-    Color::from_rgb8(250, 252, 254) // Alternative light panel
+    Color::from_rgb8(242, 242, 244)
 }
 
 // Border colors
 fn color_border() -> Color {
-    Color::from_rgb8(226, 232, 240) // slate-200
+    Color::from_rgb8(229, 229, 231)
 }
 
 // Text colors - darker for light background
 
 fn color_text_muted() -> Color {
-    Color::from_rgb8(100, 116, 139) // slate-500
+    Color::from_rgb8(110, 110, 115)
 }
 
 // Accent colors - vibrant but work on light bg
 fn color_accent() -> Color {
-    Color::from_rgb8(14, 165, 233) // sky-500
+    Color::from_rgb8(10, 132, 255)
 }
 
 fn color_accent_dark() -> Color {
-    Color::from_rgb8(3, 105, 161) // sky-700
+    Color::from_rgb8(0, 96, 223)
 }
 
 fn color_accent_soft() -> Color {
-    Color::from_rgba8(224, 242, 254, 0.8) // sky-100 with opacity
+    Color::from_rgba8(10, 132, 255, 0.12)
 }
 
 // Status colors
@@ -105,12 +105,12 @@ pub fn label_text(_theme: &Theme) -> text::Style {
 pub fn primary_button_style(_theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(match status {
-            button::Status::Hovered => Color::from_rgb(0.02, 0.5, 0.88),
+            button::Status::Hovered => color_accent_dark(),
             _ => color_accent(),
         })),
         text_color: Color::WHITE,
         border: Border {
-            radius: 6.0.into(),
+            radius: 8.0.into(),
             ..Default::default()
         },
         ..button::Style::default()
@@ -120,14 +120,14 @@ pub fn primary_button_style(_theme: &Theme, status: button::Status) -> button::S
 pub fn secondary_button_style(_theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(match status {
-            button::Status::Hovered => Color::from_rgb(0.96, 0.96, 0.96),
-            _ => Color::from_rgb(0.98, 0.98, 0.98),
+            button::Status::Hovered => Color::from_rgb8(237, 238, 240),
+            _ => Color::from_rgb8(247, 248, 249),
         })),
-        text_color: Color::from_rgb(0.3, 0.3, 0.3),
+        text_color: Color::from_rgb8(60, 60, 67),
         border: Border {
             color: color_border(),
             width: 1.0,
-            radius: 6.0.into(),
+            radius: 8.0.into(),
         },
         ..button::Style::default()
     }
@@ -155,12 +155,12 @@ pub fn panel(_theme: &Theme) -> container::Style {
         border: Border {
             color: color_border(),
             width: 1.0,
-            radius: 16.0.into(),
+            radius: 12.0.into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba(0.0, 0.0, 0.0, 0.05), // Much lighter shadow
-            offset: Vector::new(0.0, 2.0),
-            blur_radius: 8.0,
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.04),
+            offset: Vector::new(0.0, 1.0),
+            blur_radius: 6.0,
         },
         ..container::Style::default()
     }
@@ -174,7 +174,7 @@ pub fn muted_text(_theme: &Theme) -> text::Style {
 
 pub fn header_text(_theme: &Theme) -> text::Style {
     text::Style {
-        color: Some(Color::BLACK),
+        color: Some(Color::from_rgb8(28, 28, 30)),
     }
 }
 
@@ -183,40 +183,28 @@ pub fn compact_tab(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
     move |_theme, status| {
         let mut style = button::Style {
             background: if active {
-                Some(Background::Color(color_accent_soft()))
+                Some(Background::Color(color_panel_elevated()))
             } else {
                 None
             },
             text_color: if active {
-                color_accent_dark()
+                Color::from_rgb8(28, 28, 30)
             } else {
                 color_text_muted()
             },
             border: Border {
-                color: if active {
-                    color_accent()
-                } else {
-                    Color::TRANSPARENT
-                },
+                color: Color::TRANSPARENT,
                 width: 0.0,
                 radius: 8.0.into(),
             },
-            shadow: if active {
-                Shadow {
-                    color: Color::from_rgba8(14, 165, 233, 0.15),
-                    offset: Vector::new(0.0, 0.0),
-                    blur_radius: 8.0,
-                }
-            } else {
-                Shadow::default()
-            },
+            shadow: Shadow::default(),
             ..button::Style::default()
         };
 
         if let button::Status::Hovered = status {
             if !active {
                 style.background = Some(Background::Color(color_panel_elevated()));
-                style.text_color = color_accent_dark();
+                style.text_color = Color::from_rgb8(28, 28, 30);
             }
         }
 
@@ -238,29 +226,49 @@ pub fn tab_close_button(_theme: &Theme, status: button::Status) -> button::Style
     };
 
     if let button::Status::Hovered = status {
-        style.background = Some(Background::Color(Color::from_rgb8(239, 68, 68)));
+        style.background = Some(Background::Color(Color::from_rgb8(232, 71, 68)));
         style.text_color = Color::WHITE;
     }
 
     style
 }
 
-// New tab button (+)
-pub fn new_tab_button(_theme: &Theme, status: button::Status) -> button::Style {
+pub fn icon_button(_theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::Style {
-        background: Some(Background::Color(color_panel_elevated())),
-        text_color: color_accent(),
+        background: None,
+        text_color: color_text_muted(),
         border: Border {
-            color: color_border(),
-            width: 1.0,
+            color: Color::TRANSPARENT,
+            width: 0.0,
             radius: 6.0.into(),
         },
         ..button::Style::default()
     };
 
     if let button::Status::Hovered = status {
-        style.background = Some(Background::Color(color_accent_soft()));
-        style.border.color = color_accent();
+        style.background = Some(Background::Color(color_panel_elevated()));
+        style.text_color = Color::from_rgb8(28, 28, 30);
+    }
+
+    style
+}
+
+
+// New tab button (+)
+pub fn new_tab_button(_theme: &Theme, status: button::Status) -> button::Style {
+    let mut style = button::Style {
+        background: Some(Background::Color(color_panel())),
+        text_color: Color::from_rgb8(60, 60, 67),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        ..button::Style::default()
+    };
+
+    if let button::Status::Hovered = status {
+        style.background = Some(Background::Color(color_panel_elevated()));
     }
 
     style
@@ -275,30 +283,26 @@ pub fn menu_button(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
     move |_theme, status| {
         let mut style = button::Style {
             background: if active {
-                Some(Background::Color(color_accent_soft()))
-            } else {
                 Some(Background::Color(color_panel_elevated()))
+            } else {
+                Some(Background::Color(color_panel()))
             },
             text_color: if active {
-                color_accent()
+                color_accent_dark()
             } else {
                 color_text_muted()
             },
             border: Border {
-                color: if active {
-                    color_accent()
-                } else {
-                    color_border()
-                },
+                color: color_border(),
                 width: 1.0,
-                radius: 6.0.into(),
+                radius: 8.0.into(),
             },
             ..button::Style::default()
         };
 
         if let button::Status::Hovered = status {
-            style.border.color = color_accent();
-            style.text_color = color_accent();
+            style.background = Some(Background::Color(color_panel_elevated()));
+            style.text_color = Color::from_rgb8(28, 28, 30);
         }
 
         style
@@ -311,7 +315,7 @@ pub fn tab_bar(_theme: &Theme) -> container::Style {
         background: Some(Background::Color(color_panel())),
         border: Border {
             color: color_border(),
-            width: 0.0,
+            width: 1.0,
             radius: 0.0.into(),
         },
         ..container::Style::default()
@@ -325,7 +329,7 @@ pub fn terminal_content(_theme: &Theme) -> container::Style {
         border: Border {
             color: color_border(),
             width: 1.0,
-            radius: 8.0.into(),
+            radius: 6.0.into(),
         },
         ..container::Style::default()
     }
@@ -336,8 +340,8 @@ pub fn status_bar(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(color_panel_alt())),
         border: Border {
-            color: Color::TRANSPARENT,
-            width: 0.0,
+            color: color_border(),
+            width: 1.0,
             radius: 0.0.into(),
         },
         ..container::Style::default()
@@ -378,19 +382,72 @@ pub fn menu_divider(_theme: &Theme) -> container::Style {
 // Dropdown menu container (left sidebar)
 pub fn dropdown_menu(_theme: &Theme) -> container::Style {
     container::Style {
+        background: Some(Background::Color(color_panel_alt())),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 0.0.into(),
+        },
+        shadow: Shadow::default(),
+        ..container::Style::default()
+    }
+}
+
+pub fn popover_menu(_theme: &Theme) -> container::Style {
+    container::Style {
         background: Some(Background::Color(color_panel())),
         border: Border {
             color: color_border(),
-            width: 0.0,
-            radius: 0.0.into(),
+            width: 1.0,
+            radius: 8.0.into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba(0.0, 0.0, 0.0, 0.2),
-            offset: Vector::new(4.0, 0.0),
-            blur_radius: 12.0,
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.06),
+            offset: Vector::new(0.0, 4.0),
+            blur_radius: 10.0,
         },
         ..container::Style::default()
     }
+}
+
+pub fn menu_item_button(_theme: &Theme, status: button::Status) -> button::Style {
+    let mut style = button::Style {
+        background: None,
+        text_color: Color::from_rgb8(60, 60, 67),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 6.0.into(),
+        },
+        ..button::Style::default()
+    };
+
+    if let button::Status::Hovered = status {
+        style.background = Some(Background::Color(color_panel_elevated()));
+        style.text_color = Color::from_rgb8(28, 28, 30);
+    }
+
+    style
+}
+
+pub fn menu_item_destructive(_theme: &Theme, status: button::Status) -> button::Style {
+    let mut style = button::Style {
+        background: None,
+        text_color: Color::from_rgb8(210, 60, 60),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 6.0.into(),
+        },
+        ..button::Style::default()
+    };
+
+    if let button::Status::Hovered = status {
+        style.background = Some(Background::Color(color_panel_elevated()));
+        style.text_color = Color::from_rgb8(190, 50, 50);
+    }
+
+    style
 }
 
 // Quick Connect Popover
@@ -531,10 +588,10 @@ pub fn sidebar_search_input(
 pub fn sidebar_button_active(_theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(match status {
-            button::Status::Hovered => Color::from_rgb(0.92, 0.92, 0.92),
-            _ => Color::from_rgb(0.95, 0.95, 0.95),
+            button::Status::Hovered => Color::from_rgb8(232, 233, 235),
+            _ => Color::from_rgb8(236, 237, 240),
         })),
-        text_color: Color::from_rgb(0.2, 0.2, 0.2),
+        text_color: Color::from_rgb8(28, 28, 30),
         border: Border {
             radius: 6.0.into(),
             ..Default::default()
@@ -546,10 +603,10 @@ pub fn sidebar_button_active(_theme: &Theme, status: button::Status) -> button::
 pub fn sidebar_button_inactive(_theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(match status {
-            button::Status::Hovered => Color::from_rgb(0.95, 0.95, 0.95),
+            button::Status::Hovered => Color::from_rgb8(240, 241, 244),
             _ => Color::TRANSPARENT,
         })),
-        text_color: Color::from_rgb(0.3, 0.3, 0.3),
+        text_color: Color::from_rgb8(60, 60, 67),
         border: Border {
             radius: 6.0.into(),
             ..Default::default()
@@ -560,17 +617,17 @@ pub fn sidebar_button_inactive(_theme: &Theme, status: button::Status) -> button
 
 pub fn sidebar_section_header(_theme: &Theme) -> text::Style {
     text::Style {
-        color: Some(Color::from_rgb8(100, 116, 139)), // slate-500
+        color: Some(color_text_muted()),
     }
 }
 
 pub fn sidebar_recent_item(_theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(match status {
-            button::Status::Hovered => Color::from_rgb(0.96, 0.96, 0.96),
+            button::Status::Hovered => Color::from_rgb8(240, 241, 244),
             _ => Color::TRANSPARENT,
         })),
-        text_color: Color::from_rgb(0.4, 0.4, 0.4),
+        text_color: color_text_muted(),
         border: Border {
             radius: 4.0.into(),
             ..Default::default()

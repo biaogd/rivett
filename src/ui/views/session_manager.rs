@@ -15,6 +15,7 @@ pub fn render<'a>(
     form_password: &'a str,
     auth_method_password: bool,
     validation_error: Option<&'a String>,
+    open_menu_id: Option<&'a str>,
 ) -> Element<'a, Message> {
     // Suppress unused parameter warnings - these are used by the dialog at app level
     let _ = (
@@ -26,23 +27,26 @@ pub fn render<'a>(
         form_password,
         auth_method_password,
         validation_error,
+        open_menu_id,
     );
 
     let title_bar = row![
-        text("Session Manager").size(20),
+        text("Session Manager")
+            .size(16)
+            .style(ui_style::header_text),
         container("").width(Length::Fill),
-        button(text("+ New").size(14))
-            .padding([8, 16])
+        button(text("+ New").size(12))
+            .padding([6, 14])
             .style(ui_style::new_tab_button)
             .on_press(Message::CreateNewSession),
-        button(text("✕").size(16))
-            .padding([8, 12])
+        button(text("✕").size(14))
+            .padding([6, 10])
             .style(ui_style::tab_close_button)
             .on_press(Message::CloseSessionManager),
     ]
-    .spacing(12)
+    .spacing(10)
     .align_y(Alignment::Center)
-    .padding([12, 16]);
+    .padding([10, 16]);
 
     // Session list (full width now, no side panel)
     let session_list: Element<Message> = if saved_sessions.is_empty() {
@@ -74,7 +78,8 @@ pub fn render<'a>(
             for chunk in chunks {
                 let mut row = row![].spacing(spacing);
                 for session in chunk {
-                    row = row.push(components::session_card::render(session));
+                    let menu_open = open_menu_id == Some(session.id.as_str());
+                    row = row.push(components::session_card::render(session, menu_open));
                 }
                 content = content.push(row);
             }
@@ -84,7 +89,7 @@ pub fn render<'a>(
         .into()
     };
 
-    column![
+    let content = column![
         container(title_bar)
             .width(Length::Fill)
             .style(ui_style::tab_bar),
@@ -92,6 +97,9 @@ pub fn render<'a>(
             .width(Length::Fill)
             .height(Length::Fill),
     ]
-    .spacing(0)
-    .into()
+    .spacing(0);
+
+    iced::widget::mouse_area(content)
+        .on_press(Message::CloseSessionMenu)
+        .into()
 }

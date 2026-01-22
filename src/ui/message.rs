@@ -25,6 +25,8 @@ pub enum Message {
     ToggleQuickConnect,
     QuickConnectQueryChanged(String),
     SelectQuickConnectSession(String), // Session Name
+    ToggleSessionMenu(String),
+    CloseSessionMenu,
     // Session management
     CreateNewSession,
     EditSession(String),
