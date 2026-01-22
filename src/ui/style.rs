@@ -485,6 +485,23 @@ pub fn search_input(
     }
 }
 
+pub fn ime_input(_theme: &Theme, _status: iced::widget::text_input::Status) -> iced::widget::text_input::Style {
+    use iced::widget::text_input;
+
+    text_input::Style {
+        background: Background::Color(Color::TRANSPARENT),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 0.0.into(),
+        },
+        icon: Color::TRANSPARENT,
+        placeholder: Color::TRANSPARENT,
+        value: Color::TRANSPARENT,
+        selection: Color::TRANSPARENT,
+    }
+}
+
 // === Sidebar Styles ===
 
 #[allow(dead_code)]

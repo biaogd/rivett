@@ -70,6 +70,9 @@ pub enum Message {
     Copy,
     Paste,
     ClipboardReceived(Option<String>),
+    ImeBufferChanged(String),
+    ImeFocusChanged(bool),
+    RuntimeEvent(iced::event::Event),
     Ignore,
     Tick(std::time::Instant),
 }

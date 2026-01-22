@@ -49,6 +49,10 @@ pub struct App {
     // Quick Connect
     show_quick_connect: bool,
     quick_connect_query: String,
+    ime_buffer: String,
+    ime_input_id: iced::widget::Id,
+    ime_focused: bool,
+    last_ime_focus_check: std::time::Instant,
 }
 
 impl App {
@@ -83,6 +87,10 @@ impl App {
                 last_error: None,
                 show_quick_connect: false,
                 quick_connect_query: String::new(),
+                ime_buffer: String::new(),
+                ime_input_id: iced::widget::Id::new("terminal-ime-input"),
+                ime_focused: false,
+                last_ime_focus_check: std::time::Instant::now(),
             },
             Task::none(), // Removed Command::perform(Self::connect_to_localhost(), ...)
         )
@@ -94,6 +102,10 @@ impl App {
         } else {
             format!("SSH GUI - {}", self.tabs[self.active_tab].title)
         }
+    }
+
+    fn focus_terminal_ime(&self) -> Task<Message> {
+        iced::widget::operation::focus(self.ime_input_id.clone())
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -185,6 +197,7 @@ impl App {
                                 let tab_index = self.tabs.len() - 1;
                                 self.active_tab = tab_index;
                                 self.active_view = ActiveView::Terminal;
+                                commands.push(self.focus_terminal_ime());
 
                                 // Start reading loop (same as SSH)
                                 // No change needed for SSH yet, focusing on local shell which explicitly spawns a command.
@@ -250,6 +263,9 @@ impl App {
                 println!("UI: Selecting tab {}", index);
                 if index < self.tabs.len() {
                     self.active_tab = index;
+                    if self.active_view == ActiveView::Terminal && !self.show_quick_connect {
+                        commands.push(self.focus_terminal_ime());
+                    }
                 }
             }
             Message::CloseTab(index) => {
@@ -360,7 +376,7 @@ impl App {
                     self.active_view = ActiveView::Terminal; // Switch to terminal view immediately
                     let tab_index = self.active_tab;
 
-                    return Task::perform(
+                    let connect_task = Task::perform(
                         async move {
                             match tokio::time::timeout(
                                 std::time::Duration::from_secs(10),
@@ -377,6 +393,7 @@ impl App {
                         },
                         move |result| Message::SessionConnected(result, tab_index),
                     );
+                    return Task::batch(vec![connect_task, self.focus_terminal_ime()]);
                 }
             }
             Message::SaveSession => {
@@ -447,6 +464,7 @@ impl App {
             }
             Message::CloseSessionManager => {
                 self.active_view = ActiveView::Terminal;
+                commands.push(self.focus_terminal_ime());
             }
             Message::ToggleAuthMethod => {
                 self.auth_method_password = !self.auth_method_password;
@@ -697,6 +715,8 @@ impl App {
                 self.show_quick_connect = !self.show_quick_connect;
                 if self.show_quick_connect {
                     self.quick_connect_query = String::new(); // Reset query on open
+                } else if self.active_view == ActiveView::Terminal {
+                    commands.push(self.focus_terminal_ime());
                 }
             }
             Message::QuickConnectQueryChanged(query) => {
@@ -705,6 +725,131 @@ impl App {
             Message::SelectQuickConnectSession(name) => {
                 self.show_quick_connect = false;
                 return Task::perform(async move { name }, Message::ConnectToSession);
+            }
+            Message::ImeBufferChanged(value) => {
+                let prev = self.ime_buffer.clone();
+                self.ime_buffer = value.clone();
+                if self.active_view != ActiveView::Terminal || self.show_quick_connect {
+                    return Task::none();
+                }
+
+                if value == prev {
+                    return Task::none();
+                }
+
+                if value.starts_with(&prev) {
+                    let suffix = &value[prev.len()..];
+                    if suffix.is_empty() {
+                        return Task::none();
+                    }
+                    return Task::done(Message::TerminalInput(suffix.as_bytes().to_vec()));
+                }
+
+                if prev.starts_with(&value) {
+                    let removed = prev.chars().count().saturating_sub(value.chars().count());
+                    if removed == 0 {
+                        return Task::none();
+                    }
+                    let mut data = Vec::with_capacity(removed);
+                    data.extend(std::iter::repeat(0x08u8).take(removed));
+                    return Task::done(Message::TerminalInput(data));
+                }
+
+                let mut data = Vec::new();
+                let remove_count = prev.chars().count();
+                data.extend(std::iter::repeat(0x08u8).take(remove_count));
+                data.extend(value.as_bytes());
+                if data.is_empty() {
+                    return Task::none();
+                }
+                return Task::done(Message::TerminalInput(data));
+            }
+            Message::ImeFocusChanged(focused) => {
+                self.ime_focused = focused;
+                if self.active_view == ActiveView::Terminal
+                    && !self.show_quick_connect
+                    && !focused
+                {
+                    commands.push(self.focus_terminal_ime());
+                }
+            }
+            Message::RuntimeEvent(event) => {
+                if self.active_view != ActiveView::Terminal || self.show_quick_connect {
+                    return Task::none();
+                }
+
+                match event {
+                    iced::event::Event::Window(iced::window::Event::Resized(size)) => {
+                        return Task::done(Message::WindowResized(
+                            size.width as u32,
+                            size.height as u32,
+                        ));
+                    }
+                    iced::event::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                        key,
+                        modifiers,
+                        text,
+                        ..
+                    }) => {
+                        let message = {
+                            if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace)) {
+                                Message::TerminalInput(vec![0x7f])
+                            } else if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete)) {
+                                Message::TerminalInput(vec![0x1b, b'[', b'3', b'~'])
+                            } else if modifiers.command() {
+                                match key {
+                                    iced::keyboard::Key::Character(ref c) if c.as_str() == "c" => {
+                                        Message::Copy
+                                    }
+                                    iced::keyboard::Key::Character(ref c) if c.as_str() == "v" => {
+                                        Message::Paste
+                                    }
+                                    _ => Message::Ignore,
+                                }
+                            } else if modifiers.command()
+                                && matches!(key, iced::keyboard::Key::Character(ref c) if c.as_str() == "t")
+                            {
+                                Message::CreateLocalTab
+                            } else {
+                                let s = text.as_ref().map(|t| t.as_str()).unwrap_or("");
+                                if !s.is_empty() && !s.chars().any(|c| c.is_control()) {
+                                    if self.ime_focused {
+                                        Message::Ignore
+                                    } else {
+                                        Message::TerminalInput(s.as_bytes().to_vec())
+                                    }
+                                } else if matches!(key, iced::keyboard::Key::Character(_))
+                                    && !modifiers.control()
+                                {
+                                    if s.is_empty() || self.ime_focused {
+                                        Message::Ignore
+                                    } else {
+                                        Message::TerminalInput(s.as_bytes().to_vec())
+                                    }
+                                } else if let Some(data) =
+                                    crate::terminal::input::map_key_to_input(key, modifiers)
+                                {
+                                    Message::TerminalInput(data)
+                                } else {
+                                    Message::Ignore
+                                }
+                            }
+                        };
+
+                        if matches!(message, Message::Ignore) {
+                            return Task::none();
+                        }
+                        return Task::done(message);
+                    }
+                    iced::event::Event::Mouse(iced::mouse::Event::WheelScrolled { delta }) => {
+                        let delta_y = match delta {
+                            iced::mouse::ScrollDelta::Lines { y, .. } => y,
+                            iced::mouse::ScrollDelta::Pixels { y, .. } => y / 20.0,
+                        };
+                        return Task::done(Message::ScrollWheel(delta_y));
+                    }
+                    _ => {}
+                }
             }
             Message::TerminalInput(data) => {
                 if data.is_empty() {
@@ -739,12 +884,24 @@ impl App {
                     println!("UI: Tab {} ignoring input (invalid index)", self.active_tab);
                 }
             }
-            Message::Tick(_now) => {
+            Message::Tick(now) => {
                 // Spinner animation
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     if let SessionState::Connecting(_) = tab.state {
                         tab.spinner_cache.clear();
                     }
+                }
+
+                if self.active_view == ActiveView::Terminal
+                    && !self.show_quick_connect
+                    && now.duration_since(self.last_ime_focus_check)
+                        > std::time::Duration::from_millis(120)
+                {
+                    self.last_ime_focus_check = now;
+                    commands.push(
+                        iced::widget::operation::is_focused(self.ime_input_id.clone())
+                            .map(Message::ImeFocusChanged),
+                    );
                 }
 
                 // Throttled rendering with debounce
@@ -846,9 +1003,9 @@ impl App {
 
     pub fn view(&self) -> Element<'_, Message> {
         use iced::widget::container::transparent;
-        use iced::widget::{Space, button, column, container, row, stack};
+        use iced::widget::{Space, button, column, container, row, stack, text_input};
 
-        let content = match self.active_view {
+        let mut content = match self.active_view {
             ActiveView::Terminal => views::terminal::render(&self.tabs, self.active_tab),
             ActiveView::SessionManager => views::session_manager::render(
                 &self.saved_sessions,
@@ -862,6 +1019,19 @@ impl App {
                 self.validation_error.as_ref(),
             ),
         };
+        if self.active_view == ActiveView::Terminal && !self.show_quick_connect {
+            let ime_input = text_input("", &self.ime_buffer)
+                .on_input(Message::ImeBufferChanged)
+                .id(self.ime_input_id.clone())
+                .size(1)
+                .padding(0)
+                .width(Length::Fixed(1.0))
+                .style(ui_style::ime_input);
+            let ime_layer = container(ime_input)
+                .width(Length::Shrink)
+                .height(Length::Shrink);
+            content = stack![content, ime_layer].into();
+        }
 
         // Build layout from top to bottom: tab_bar (if terminal) -> content -> status_bar
         let mut main_layout = column![];
@@ -988,77 +1158,15 @@ impl App {
 
     // Add separate timer subscription method if needed, or combine:
     fn subscription(&self) -> iced::Subscription<Message> {
-        use iced::event::{self, Event};
-        use iced::keyboard;
-        use iced::mouse;
-        use iced::window;
+        use iced::event;
 
         let mut subs = Vec::new();
 
         // Add Tick subscription for render throttling (approx 60 FPS check rate)
         subs.push(iced::time::every(std::time::Duration::from_millis(16)).map(Message::Tick));
 
-        if self.active_view == ActiveView::Terminal {
-            let keyboard_subscription = event::listen().map(|event| {
-                match event {
-                    Event::Window(window::Event::Resized(size)) => {
-                        Message::WindowResized(size.width as u32, size.height as u32)
-                    }
-                    Event::Keyboard(keyboard::Event::KeyPressed {
-                        key,
-                        modifiers,
-                        text,
-                        ..
-                    }) => {
-                        // Handle Cmd+C / Cmd+V
-                        if modifiers.command() {
-                            match key {
-                                keyboard::Key::Character(ref c) if c.as_str() == "c" => {
-                                    return Message::Copy;
-                                }
-                                keyboard::Key::Character(ref c) if c.as_str() == "v" => {
-                                    return Message::Paste;
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        // Handle Cmd+T for new local tab
-                        if modifiers.command()
-                            && matches!(key, keyboard::Key::Character(ref c) if c.as_str() == "t")
-                        {
-                            return Message::CreateLocalTab;
-                        }
-
-                        // Try to use the text field (which handles IME commit chars and regular chars)
-                        // If it's a control character or special key, map_key_to_input is better.
-                        // If it's a normal char or CJK char, 'text' is better.
-
-                        // Simple heuristic: If text is NOT empty and NOT a control char, use it.
-                        let s = text.as_ref().map(|t| t.as_str()).unwrap_or("");
-                        if !s.is_empty() && !s.chars().any(|c| c.is_control()) {
-                            Message::TerminalInput(s.as_bytes().to_vec())
-                        } else {
-                            if let Some(data) =
-                                crate::terminal::input::map_key_to_input(key, modifiers)
-                            {
-                                Message::TerminalInput(data)
-                            } else {
-                                Message::Ignore
-                            }
-                        }
-                    }
-                    Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                        let delta_y = match delta {
-                            mouse::ScrollDelta::Lines { y, .. } => y,
-                            mouse::ScrollDelta::Pixels { y, .. } => y / 20.0, // Approximate conversion
-                        };
-                        Message::ScrollWheel(delta_y)
-                    }
-                    _ => Message::Ignore,
-                }
-            });
-            subs.push(keyboard_subscription);
+        if self.active_view == ActiveView::Terminal && !self.show_quick_connect {
+            subs.push(event::listen().map(Message::RuntimeEvent));
         }
 
         // Ticking subscription if any tab is connecting
