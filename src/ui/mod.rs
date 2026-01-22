@@ -54,6 +54,8 @@ pub struct App {
     ime_focused: bool,
     last_ime_focus_check: std::time::Instant,
     ime_preedit: String,
+    ime_ignore_next_input: bool,
+    pending_resize: Option<(usize, usize, std::time::Instant)>,
 }
 
 impl App {
@@ -93,6 +95,8 @@ impl App {
                 ime_focused: false,
                 last_ime_focus_check: std::time::Instant::now(),
                 ime_preedit: String::new(),
+                ime_ignore_next_input: false,
+                pending_resize: None,
             },
             Task::none(), // Removed Command::perform(Self::connect_to_localhost(), ...)
         )
@@ -108,6 +112,26 @@ impl App {
 
     fn focus_terminal_ime(&self) -> Task<Message> {
         iced::widget::operation::focus(self.ime_input_id.clone())
+    }
+
+    fn bracketed_paste_bytes(&self, text: &str) -> Vec<u8> {
+        let mut data = Vec::with_capacity(text.len() + 12);
+        data.extend_from_slice(b"\x1b[200~");
+        data.extend_from_slice(text.as_bytes());
+        data.extend_from_slice(b"\x1b[201~");
+        data
+    }
+
+    fn maybe_wrap_bracketed_paste(&self, data: &[u8]) -> Vec<u8> {
+        if data.contains(&b'\n') && !data.windows(6).any(|w| w == b"\x1b[200~") {
+            let mut wrapped = Vec::with_capacity(data.len() + 12);
+            wrapped.extend_from_slice(b"\x1b[200~");
+            wrapped.extend_from_slice(data);
+            wrapped.extend_from_slice(b"\x1b[201~");
+            wrapped
+        } else {
+            data.to_vec()
+        }
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -702,6 +726,7 @@ impl App {
                 let cols = (term_w / terminal_widget::CELL_WIDTH) as usize;
                 let rows = (term_h / terminal_widget::CELL_HEIGHT) as usize;
 
+                self.pending_resize = Some((cols, rows, std::time::Instant::now()));
                 return Task::done(Message::TerminalResize(cols, rows));
             }
             Message::ScrollWheel(delta) => {
@@ -729,6 +754,12 @@ impl App {
                 return Task::perform(async move { name }, Message::ConnectToSession);
             }
             Message::ImeBufferChanged(value) => {
+                if self.ime_ignore_next_input {
+                    self.ime_ignore_next_input = false;
+                    self.ime_buffer.clear();
+                    return Task::none();
+                }
+
                 let prev = self.ime_buffer.clone();
                 self.ime_buffer = value.clone();
                 if self.active_view != ActiveView::Terminal || self.show_quick_connect {
@@ -765,6 +796,11 @@ impl App {
                     return Task::none();
                 }
                 return Task::done(Message::TerminalInput(data));
+            }
+            Message::ImePaste => {
+                self.ime_ignore_next_input = true;
+                self.ime_buffer.clear();
+                return iced::clipboard::read().map(Message::ClipboardReceived);
             }
             Message::ImeFocusChanged(focused) => {
                 self.ime_focused = focused;
@@ -821,7 +857,11 @@ impl App {
                                         Message::Copy
                                     }
                                     iced::keyboard::Key::Character(ref c) if c.as_str() == "v" => {
-                                        Message::Paste
+                                        if self.ime_focused {
+                                            Message::Ignore
+                                        } else {
+                                            Message::Paste
+                                        }
                                     }
                                     _ => Message::Ignore,
                                 }
@@ -878,7 +918,7 @@ impl App {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     if let Some(session) = &tab.session {
                         let session = session.clone();
-                        let data_to_send = data.clone();
+                        let data_to_send = self.maybe_wrap_bracketed_paste(&data);
 
                         return Task::perform(
                             async move {
@@ -908,6 +948,13 @@ impl App {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     if let SessionState::Connecting(_) = tab.state {
                         tab.spinner_cache.clear();
+                    }
+                }
+
+                if let Some((cols, rows, at)) = self.pending_resize {
+                    if now.duration_since(at) > std::time::Duration::from_millis(120) {
+                        self.pending_resize = None;
+                        return Task::done(Message::TerminalResize(cols, rows));
                     }
                 }
 
@@ -1012,7 +1059,9 @@ impl App {
             }
             Message::ClipboardReceived(content) => {
                 if let Some(text) = content {
-                    return Task::done(Message::TerminalInput(text.as_bytes().to_vec()));
+                    self.ime_ignore_next_input = true;
+                    self.ime_buffer.clear();
+                    return Task::done(Message::TerminalInput(self.bracketed_paste_bytes(&text)));
                 }
             }
             Message::Ignore => {}
@@ -1052,6 +1101,7 @@ impl App {
 
             let ime_input = text_input("", &self.ime_buffer)
                 .on_input(Message::ImeBufferChanged)
+                .on_paste(|_| Message::ImePaste)
                 .id(self.ime_input_id.clone())
                 .size(1)
                 .padding(0)

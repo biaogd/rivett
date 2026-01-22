@@ -72,6 +72,7 @@ pub enum Message {
     ClipboardReceived(Option<String>),
     ImeBufferChanged(String),
     ImeFocusChanged(bool),
+    ImePaste,
     RuntimeEvent(iced::event::Event),
     Ignore,
     Tick(std::time::Instant),
