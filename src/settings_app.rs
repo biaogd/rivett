@@ -77,19 +77,24 @@ impl SettingsApp {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let tab_bar = row![
+        let sidebar = column![
+            container("").height(10.0),
             tab_button("General", self.tab == SettingsTab::General, SettingsTab::General),
+            container("").height(4.0),
             tab_button("Terminal", self.tab == SettingsTab::Terminal, SettingsTab::Terminal),
         ]
-        .spacing(8);
+        .spacing(0);
 
         let content = match self.tab {
-            SettingsTab::General => column![text("General").size(14).style(ui_style::header_text)]
-                .spacing(8),
+            SettingsTab::General => {
+                column![text("No settings yet.")
+                    .size(12)
+                    .style(ui_style::muted_text),]
+                .spacing(6)
+            }
             SettingsTab::Terminal => {
                 let size = self.settings.terminal_font_size.round() as i32;
                 column![
-                    text("Terminal").size(14).style(ui_style::header_text),
                     row![
                         text("Font Size")
                             .size(12)
@@ -113,14 +118,22 @@ impl SettingsApp {
             }
         };
 
-        let content = column![text("Settings").size(16).style(ui_style::header_text), tab_bar, content]
-            .spacing(12);
+        let sidebar = container(sidebar)
+            .width(Length::Fixed(200.0))
+            .height(Length::Fill)
+            .padding(12)
+            .style(ui_style::dropdown_menu);
 
-        container(content)
-            .padding(16)
+        let content = container(content)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let layout = row![sidebar, content].spacing(0);
+
+        container(layout)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(ui_style::panel)
+            .style(ui_style::app_background)
             .into()
     }
 
@@ -153,7 +166,8 @@ fn tab_button(label: &str, active: bool, tab: SettingsTab) -> iced::Element<'_, 
     };
 
     button(text(label).size(12))
-        .padding([6, 12])
+        .padding([8, 12])
+        .width(Length::Fill)
         .style(style)
         .on_press(Message::SelectTab(tab))
         .into()
