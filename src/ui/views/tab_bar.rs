@@ -1,7 +1,7 @@
 use crate::ui::SessionTab;
 use crate::ui::style as ui_style;
-use crate::ui::{ActiveView, Message};
-use iced::widget::{button, container, responsive, row, text};
+use crate::ui::Message;
+use iced::widget::{button, container, responsive, row, text, Space};
 use iced::{Alignment, Element, Length};
 
 fn truncate_title(title: &str, max_chars: usize) -> String {
@@ -18,21 +18,17 @@ fn truncate_title(title: &str, max_chars: usize) -> String {
 pub fn render<'a>(
     tabs: &'a [SessionTab],
     active_tab: usize,
-    active_view: ActiveView,
 ) -> Element<'a, Message> {
     let inner = responsive(move |size| {
         let spacing = 4.0;
         let padding = 24.0;
-        let plus_width = if active_view != ActiveView::SessionManager {
-            44.0
-        } else {
-            0.0
-        };
+        let plus_width = 44.0;
 
         let count = tabs.len().max(1) as f32;
         let available = (size.width - padding - plus_width).max(80.0);
         let tab_width = ((available - spacing * (count - 1.0)) / count)
             .clamp(80.0, 200.0);
+        let sessions_width = tab_width.min(120.0);
         let text_room = (tab_width - 44.0).max(8.0);
         let max_chars = (text_room / 7.0).floor().max(4.0) as usize;
 
@@ -40,24 +36,31 @@ pub fn render<'a>(
             .iter()
             .enumerate()
             .fold(row![].spacing(spacing), |row, (index, tab)| {
-                let is_active = index == active_tab && active_view == ActiveView::Terminal;
+                let is_active = index == active_tab;
                 let title = truncate_title(&tab.title, max_chars);
 
-                let tab_content = row![
-                    text(title).size(13),
-                    container("").width(Length::Fill),
+                let close_button: Element<'_, Message> = if index == 0 {
+                    container(Space::new())
+                        .width(Length::Fixed(12.0))
+                        .into()
+                } else {
                     button(text("×").size(14))
                         .padding([0, 4])
                         .style(ui_style::tab_close_button)
-                        .on_press(Message::CloseTab(index)),
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center);
+                        .on_press(Message::CloseTab(index))
+                        .into()
+                };
+
+                let tab_content = row![text(title).size(13), container("").width(Length::Fill), close_button]
+                    .spacing(8)
+                    .align_y(Alignment::Center);
+
+                let width = if index == 0 { sessions_width } else { tab_width };
 
                 row.push(
                     button(tab_content)
                         .padding([8, 12])
-                        .width(Length::Fixed(tab_width))
+                        .width(Length::Fixed(width))
                         .style(ui_style::compact_tab(is_active))
                         .on_press(Message::SelectTab(index)),
                 )
@@ -65,14 +68,12 @@ pub fn render<'a>(
 
         let mut tab_bar = row![tabs_row].align_y(Alignment::Center).spacing(8);
 
-        if active_view != ActiveView::SessionManager {
-            tab_bar = tab_bar.push(
-                button(text("+").size(16))
-                    .padding([6, 12])
-                    .style(ui_style::new_tab_button)
-                    .on_press(Message::ToggleQuickConnect),
-            );
-        }
+        tab_bar = tab_bar.push(
+            button(text("+").size(16))
+                .padding([6, 12])
+                .style(ui_style::new_tab_button)
+                .on_press(Message::ToggleQuickConnect),
+        );
 
         tab_bar.into()
     });

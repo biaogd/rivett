@@ -73,6 +73,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.tabs.push(SessionTab::new(&name));
                 app.active_tab = app.tabs.len() - 1;
                 app.active_view = ActiveView::Terminal;
+                app.last_terminal_tab = app.active_tab;
                 let tab_index = app.active_tab;
 
                 let connect_task = Task::perform(
@@ -162,8 +163,15 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::CloseSessionManager => {
-            app.active_view = ActiveView::Terminal;
-            Task::batch(vec![app.focus_terminal_ime()])
+            if app.last_terminal_tab > 0 && app.last_terminal_tab < app.tabs.len() {
+                app.active_tab = app.last_terminal_tab;
+                app.active_view = ActiveView::Terminal;
+                Task::batch(vec![app.focus_terminal_ime()])
+            } else {
+                app.active_tab = 0;
+                app.active_view = ActiveView::SessionManager;
+                Task::none()
+            }
         }
         Message::ToggleAuthMethod => {
             app.auth_method_password = !app.auth_method_password;

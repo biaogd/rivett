@@ -25,16 +25,35 @@ impl App {
                 println!("UI: Selecting tab {}", index);
                 if index < self.tabs.len() {
                     self.active_tab = index;
-                    if self.active_view == ActiveView::Terminal && !self.show_quick_connect {
-                        commands.push(self.focus_terminal_ime());
+                    if index == 0 {
+                        self.active_view = ActiveView::SessionManager;
+                    } else {
+                        self.active_view = ActiveView::Terminal;
+                        self.last_terminal_tab = index;
+                        if !self.show_quick_connect {
+                            commands.push(self.focus_terminal_ime());
+                        }
                     }
                 }
             }
             Message::CloseTab(index) => {
+                if index == 0 {
+                    return Task::none();
+                }
                 if index < self.tabs.len() {
                     self.tabs.remove(index);
                     if self.active_tab >= self.tabs.len() && self.active_tab > 0 {
                         self.active_tab -= 1;
+                    }
+                    if self.last_terminal_tab == index {
+                        self.last_terminal_tab = self.active_tab;
+                    } else if self.last_terminal_tab > index {
+                        self.last_terminal_tab -= 1;
+                    }
+                    if self.active_tab == 0 {
+                        self.active_view = ActiveView::SessionManager;
+                    } else {
+                        self.active_view = ActiveView::Terminal;
                     }
                 }
             }
@@ -62,9 +81,9 @@ impl App {
             }
             Message::ShowSessionManager => {
                 self.show_quick_connect = false;
-                self.show_menu = false;
                 self.active_view = ActiveView::SessionManager;
                 self.editing_session = None;
+                self.active_tab = 0;
             }
             Message::ShowSftp => {
                 self.show_menu = false;

@@ -67,13 +67,10 @@ impl App {
         let mut main_layout = column![];
 
         // Tab bar at the top (only in terminal view)
-        if self.active_view == ActiveView::Terminal {
-            main_layout = main_layout.push(views::tab_bar::render(
-                &self.tabs,
-                self.active_tab,
-                self.active_view,
-            ));
-        }
+        main_layout = main_layout.push(views::tab_bar::render(
+            &self.tabs,
+            self.active_tab,
+        ));
 
         // Main content
         main_layout = main_layout.push(content);

@@ -48,6 +48,7 @@ pub struct App {
     pub(in crate::ui) ime_preedit: String,
     pub(in crate::ui) ime_ignore_next_input: bool,
     pub(in crate::ui) pending_resize: Option<(usize, usize, std::time::Instant)>,
+    pub(in crate::ui) last_terminal_tab: usize,
 }
 
 impl App {
@@ -59,6 +60,7 @@ impl App {
         });
         let settings_storage = SettingsStorage::new();
         let app_settings = settings_storage.load_settings().unwrap_or_default();
+        let sessions_tab = SessionTab::new("Sessions");
 
         let (main_window, open_task) = iced::window::open(iced::window::Settings::default());
 
@@ -66,7 +68,7 @@ impl App {
             Self {
                 sessions: SessionManager::new(),
                 platform: PlatformServices::new(),
-                tabs: Vec::new(),
+                tabs: vec![sessions_tab],
                 active_tab: 0,
                 show_menu: true,
                 main_window: Some(main_window),
@@ -99,14 +101,15 @@ impl App {
                 ime_preedit: String::new(),
                 ime_ignore_next_input: false,
                 pending_resize: None,
+                last_terminal_tab: 0,
             },
             open_task.map(Message::WindowOpened), // Open the main window
         )
     }
 
     pub fn title(&self, _window: iced::window::Id) -> String {
-        if self.tabs.is_empty() {
-            "SSH GUI - No Sessions".to_string()
+        if self.active_tab == 0 {
+            "SSH GUI - Sessions".to_string()
         } else {
             format!("SSH GUI - {}", self.tabs[self.active_tab].title)
         }

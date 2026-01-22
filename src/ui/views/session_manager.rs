@@ -39,10 +39,6 @@ pub fn render<'a>(
             .padding([6, 14])
             .style(ui_style::new_tab_button)
             .on_press(Message::CreateNewSession),
-        button(text("✕").size(14))
-            .padding([6, 10])
-            .style(ui_style::tab_close_button)
-            .on_press(Message::CloseSessionManager),
     ]
     .spacing(10)
     .align_y(Alignment::Center)

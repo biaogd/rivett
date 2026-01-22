@@ -85,6 +85,7 @@ pub(in crate::ui) fn create_local_tab(app: &mut App) -> Task<Message> {
                     let tab_index = app.tabs.len() - 1;
                     app.active_tab = tab_index;
                     app.active_view = ActiveView::Terminal;
+                    app.last_terminal_tab = tab_index;
                     commands.push(app.focus_terminal_ime());
 
                     if let Some(tab) = app.tabs.get_mut(tab_index) {

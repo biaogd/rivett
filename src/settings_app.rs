@@ -3,7 +3,6 @@ use crate::ui::style as ui_style;
 use iced::widget::{column, container, text};
 use iced::widget::{button, row};
 use iced::{Alignment, Element, Length, Settings, Subscription, Theme};
-use std::time::Instant;
 
 #[cfg(target_os = "macos")]
 fn set_accessory_activation_policy() {
@@ -40,7 +39,7 @@ enum Message {
     SelectTab(SettingsTab),
     FontSizeDecrease,
     FontSizeIncrease,
-    Tick(Instant),
+    Tick,
 }
 
 impl SettingsApp {
@@ -76,7 +75,7 @@ impl SettingsApp {
                 let next = (self.settings.terminal_font_size + 1.0).min(24.0);
                 self.update_font_size(next);
             }
-            Message::Tick(_) => {
+            Message::Tick => {
                 if let Some(pid) = self.parent_pid {
                     if !is_parent_alive(pid) {
                         return iced::exit();
@@ -90,7 +89,7 @@ impl SettingsApp {
 
     fn subscription(&self) -> Subscription<Message> {
         if self.parent_pid.is_some() {
-            iced::time::every(std::time::Duration::from_secs(1)).map(Message::Tick)
+            iced::time::every(std::time::Duration::from_secs(1)).map(|_| Message::Tick)
         } else {
             Subscription::none()
         }
