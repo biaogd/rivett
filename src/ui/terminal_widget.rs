@@ -228,17 +228,6 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
         for line in 0..visible_lines {
             let cache = &self.line_caches[line];
             let geometry = cache.draw(renderer, bounds.size(), |frame| {
-                // Draw Cursor (per line to avoid full redraw)
-                if line == cursor_row {
-                    let cursor_x = (cursor_col + preedit_len) as f32 * cell_width;
-                    let cursor_y = cursor_row as f32 * cell_height;
-                    frame.fill_rectangle(
-                        Point::new(cursor_x, cursor_y),
-                        Size::new(cell_width, cell_height),
-                        Color::from_rgba8(0, 0, 0, 0.3),
-                    );
-                }
-
                 // --- Batched Text Rendering (per line) ---
                 let mut current_text = String::new();
                 let mut current_fg = Color::BLACK;
@@ -334,16 +323,23 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
             geometries.push(geometry);
         }
 
+        let mut overlay = Frame::new(renderer, bounds.size());
+        let cursor_x = (cursor_col + preedit_len) as f32 * cell_width;
+        let cursor_y = cursor_row as f32 * cell_height;
+
+        overlay.fill_rectangle(
+            Point::new(cursor_x, cursor_y),
+            Size::new(cell_width, cell_height),
+            Color::from_rgba8(0, 0, 0, 0.3),
+        );
+
         if let Some(preedit) = self.preedit {
             if !preedit.is_empty() {
-                let mut frame = Frame::new(renderer, bounds.size());
-                let cursor_x = cursor_col as f32 * cell_width;
-                let cursor_y = cursor_row as f32 * cell_height;
                 let text_width = preedit.chars().count().max(1) as f32 * cell_width;
 
-                frame.fill_text(Text {
+                overlay.fill_text(Text {
                     content: preedit.to_string(),
-                    position: Point::new(cursor_x, cursor_y),
+                    position: Point::new(cursor_col as f32 * cell_width, cursor_y),
                     color: Color::from_rgb8(30, 64, 175),
                     size: 12.0.into(),
                     font: iced::Font {
@@ -353,15 +349,15 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                     ..Text::default()
                 });
 
-                frame.fill_rectangle(
-                    Point::new(cursor_x, cursor_y + cell_height - 2.0),
+                overlay.fill_rectangle(
+                    Point::new(cursor_col as f32 * cell_width, cursor_y + cell_height - 2.0),
                     Size::new(text_width, 1.0),
                     Color::from_rgb8(30, 64, 175),
                 );
-
-                geometries.push(frame.into_geometry());
             }
         }
+
+        geometries.push(overlay.into_geometry());
 
         geometries
     }
