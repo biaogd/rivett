@@ -133,46 +133,6 @@ impl TerminalEmulator {
         }
     }
 
-    pub fn render_grid<F>(&self, mut func: F)
-    where
-        F: FnMut(usize, usize, char, alacritty_terminal::vte::ansi::Color, bool),
-    {
-        let term = self.term.lock();
-        let content = term.renderable_content();
-        let grid = term.grid();
-        let cols = grid.columns();
-        let rows = grid.screen_lines();
-        let display_offset = grid.display_offset();
-        // TERM.selection is a field
-        let selection = &term.selection; // Changed from term.selection()
-
-        for item in content.display_iter {
-            let cell = item.cell;
-            let c = cell.c;
-            let fg = cell.fg;
-
-            // Grid coordinates can be negative (history)
-            let line_raw = item.point.line.0 as isize;
-            let col_raw = item.point.column.0 as isize;
-
-            // Apply display_offset to map grid coordinates to screen coordinates
-            // display_offset shifts the view "up" into history.
-            // A line at -N in grid becomes (-N + offset) on screen.
-            let line = line_raw + display_offset as isize;
-            let col = col_raw;
-
-            if line >= 0 && line < rows as isize && col >= 0 && col < cols as isize {
-                // Attempt to use to_range which is common in older alacritty versions
-                let is_selected = selection
-                    .as_ref()
-                    .and_then(|s| s.to_range(&*term))
-                    .map(|range| range.contains(item.point))
-                    .unwrap_or(false);
-                func(col as usize, line as usize, c, fg, is_selected);
-            }
-        }
-    }
-
     pub fn render_line<F>(&self, line: usize, mut func: F)
     where
         // line_idx, col_idx, cell, is_selected
