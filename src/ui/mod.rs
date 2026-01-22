@@ -990,6 +990,7 @@ impl App {
     fn subscription(&self) -> iced::Subscription<Message> {
         use iced::event::{self, Event};
         use iced::keyboard;
+        use iced::mouse;
         use iced::window;
 
         let mut subs = Vec::new();
@@ -1046,6 +1047,13 @@ impl App {
                                 Message::Ignore
                             }
                         }
+                    }
+                    Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                        let delta_y = match delta {
+                            mouse::ScrollDelta::Lines { y, .. } => y,
+                            mouse::ScrollDelta::Pixels { y, .. } => y / 20.0, // Approximate conversion
+                        };
+                        Message::ScrollWheel(delta_y)
                     }
                     _ => Message::Ignore,
                 }
