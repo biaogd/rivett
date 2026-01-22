@@ -1025,11 +1025,9 @@ impl App {
         use iced::widget::{Space, button, column, container, row, stack, text_input};
 
         let mut content = match self.active_view {
-            ActiveView::Terminal => views::terminal::render(
-                &self.tabs,
-                self.active_tab,
-                &self.ime_preedit,
-            ),
+            ActiveView::Terminal => {
+                views::terminal::render(&self.tabs, self.active_tab, &self.ime_preedit)
+            }
             ActiveView::SessionManager => views::session_manager::render(
                 &self.saved_sessions,
                 self.editing_session.as_ref(),

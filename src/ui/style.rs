@@ -485,7 +485,10 @@ pub fn search_input(
     }
 }
 
-pub fn ime_input(_theme: &Theme, _status: iced::widget::text_input::Status) -> iced::widget::text_input::Style {
+pub fn ime_input(
+    _theme: &Theme,
+    _status: iced::widget::text_input::Status,
+) -> iced::widget::text_input::Style {
     use iced::widget::text_input;
 
     text_input::Style {

@@ -2,8 +2,8 @@ use crate::core::session::Session;
 use crate::terminal::{TerminalDamage, TerminalEmulator};
 use iced::widget::canvas::Cache;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::sync::mpsc;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionState {

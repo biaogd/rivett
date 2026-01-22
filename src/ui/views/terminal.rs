@@ -32,25 +32,30 @@ pub fn render<'a>(
         .into();
     }
 
-    let (current_chrome_cache, current_line_caches, current_emulator, current_tab_state, _current_spinner_cache) =
-        if let Some(tab) = tabs.get(active_tab) {
-            (
-                &tab.chrome_cache,
-                &tab.line_caches,
-                tab.emulator.clone(),
-                &tab.state,
-                &tab.spinner_cache,
-            )
-        } else {
-            // Should be covered by is_empty check, but safe fallback
-            (
-                &tabs[0].chrome_cache,
-                &tabs[0].line_caches,
-                tabs[0].emulator.clone(),
-                &tabs[0].state,
-                &tabs[0].spinner_cache,
-            )
-        };
+    let (
+        current_chrome_cache,
+        current_line_caches,
+        current_emulator,
+        current_tab_state,
+        _current_spinner_cache,
+    ) = if let Some(tab) = tabs.get(active_tab) {
+        (
+            &tab.chrome_cache,
+            &tab.line_caches,
+            tab.emulator.clone(),
+            &tab.state,
+            &tab.spinner_cache,
+        )
+    } else {
+        // Should be covered by is_empty check, but safe fallback
+        (
+            &tabs[0].chrome_cache,
+            &tabs[0].line_caches,
+            tabs[0].emulator.clone(),
+            &tabs[0].state,
+            &tabs[0].spinner_cache,
+        )
+    };
 
     match current_tab_state {
         SessionState::Connecting(start_time) => {
@@ -111,9 +116,13 @@ pub fn render<'a>(
                     current_emulator.clone(),
                     current_chrome_cache,
                     current_line_caches,
-                    if ime_preedit.is_empty() { None } else { Some(ime_preedit) },
+                    if ime_preedit.is_empty() {
+                        None
+                    } else {
+                        Some(ime_preedit)
+                    },
                 )
-                    .view(),
+                .view(),
             )
             .width(Length::Fill)
             .height(Length::Fill)

@@ -1,6 +1,6 @@
+use crate::terminal::TerminalDamage;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::terminal::TerminalDamage;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActiveView {
