@@ -4080,6 +4080,7 @@ dependencies = [
  "chrono",
  "dirs",
  "iced",
+ "iced_core",
  "parking_lot",
  "portable-pty",
  "russh",

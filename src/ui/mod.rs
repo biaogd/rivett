@@ -53,6 +53,7 @@ pub struct App {
     ime_input_id: iced::widget::Id,
     ime_focused: bool,
     last_ime_focus_check: std::time::Instant,
+    ime_preedit: String,
 }
 
 impl App {
@@ -91,6 +92,7 @@ impl App {
                 ime_input_id: iced::widget::Id::new("terminal-ime-input"),
                 ime_focused: false,
                 last_ime_focus_check: std::time::Instant::now(),
+                ime_preedit: String::new(),
             },
             Task::none(), // Removed Command::perform(Self::connect_to_localhost(), ...)
         )
@@ -777,6 +779,19 @@ impl App {
                 }
 
                 match event {
+                    iced::event::Event::InputMethod(event) => {
+                        match event {
+                            iced_core::input_method::Event::Opened
+                            | iced_core::input_method::Event::Closed
+                            | iced_core::input_method::Event::Commit(_) => {
+                                self.ime_preedit.clear();
+                            }
+                            iced_core::input_method::Event::Preedit(content, _) => {
+                                self.ime_preedit = content;
+                            }
+                        }
+                        return Task::none();
+                    }
                     iced::event::Event::Window(iced::window::Event::Resized(size)) => {
                         return Task::done(Message::WindowResized(
                             size.width as u32,
@@ -1010,7 +1025,11 @@ impl App {
         use iced::widget::{Space, button, column, container, row, stack, text_input};
 
         let mut content = match self.active_view {
-            ActiveView::Terminal => views::terminal::render(&self.tabs, self.active_tab),
+            ActiveView::Terminal => views::terminal::render(
+                &self.tabs,
+                self.active_tab,
+                &self.ime_preedit,
+            ),
             ActiveView::SessionManager => views::session_manager::render(
                 &self.saved_sessions,
                 self.editing_session.as_ref(),

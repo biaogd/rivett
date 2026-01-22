@@ -5,7 +5,11 @@ use crate::ui::terminal_widget;
 use iced::widget::{column, container, row, text};
 use iced::{Alignment, Element, Length};
 
-pub fn render<'a>(tabs: &'a [SessionTab], active_tab: usize) -> Element<'a, Message> {
+pub fn render<'a>(
+    tabs: &'a [SessionTab],
+    active_tab: usize,
+    ime_preedit: &'a str,
+) -> Element<'a, Message> {
     if tabs.is_empty() {
         return column![
             container(
@@ -107,6 +111,7 @@ pub fn render<'a>(tabs: &'a [SessionTab], active_tab: usize) -> Element<'a, Mess
                     current_emulator.clone(),
                     current_chrome_cache,
                     current_line_caches,
+                    if ime_preedit.is_empty() { None } else { Some(ime_preedit) },
                 )
                     .view(),
             )
