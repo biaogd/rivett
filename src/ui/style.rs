@@ -430,6 +430,33 @@ pub fn menu_item_button(_theme: &Theme, status: button::Status) -> button::Style
     style
 }
 
+pub fn sftp_row_button(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let mut style = button::Style {
+            background: if selected {
+                Some(Background::Color(color_accent_soft()))
+            } else {
+                None
+            },
+            text_color: Color::from_rgb8(60, 60, 67),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 6.0.into(),
+            },
+            ..button::Style::default()
+        };
+
+        if let button::Status::Hovered = status {
+            if !selected {
+                style.background = Some(Background::Color(color_panel_elevated()));
+            }
+        }
+
+        style
+    }
+}
+
 pub fn menu_item_destructive(_theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::Style {
         background: None,

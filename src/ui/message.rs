@@ -1,4 +1,5 @@
 use crate::terminal::TerminalDamage;
+use crate::ui::state::{SftpContextAction, SftpPane, SftpTransferUpdate};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -24,7 +25,17 @@ pub enum Message {
     SftpDragMove(iced::Point),
     SftpLocalPathChanged(String),
     SftpRemotePathChanged(String),
-    SftpRemoteLoaded(usize, Result<Vec<crate::ui::state::SftpEntry>, String>),
+    SftpRemoteLoaded(
+        usize,
+        Result<(Vec<crate::ui::state::SftpEntry>, Option<String>), String>,
+    ),
+    SftpPanelCursorMoved(iced::Point),
+    SftpOpenContextMenu(SftpPane, String),
+    SftpCloseContextMenu,
+    SftpContextAction(SftpPane, String, SftpContextAction),
+    SftpTransferUpdate(SftpTransferUpdate),
+    SftpLocalEntryPressed(String, bool),
+    SftpRemoteEntryPressed(String, bool),
     ShowPortForwarding,
     ShowSettings,
     // Quick Connect

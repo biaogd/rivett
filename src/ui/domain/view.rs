@@ -122,6 +122,14 @@ impl App {
                 &self.sftp_remote_entries,
                 self.sftp_remote_error.as_deref(),
                 self.sftp_remote_loading,
+                self.sftp_local_selected.as_deref(),
+                self.sftp_remote_selected.as_deref(),
+                sftp_name_column_width(self.sftp_panel_width),
+                self.sftp_context_menu.as_ref(),
+                self.sftp_panel_width,
+                self.window_height as f32,
+                &self.sftp_transfers,
+                self.active_tab,
             ))
             .padding(12)
             .width(Length::Fill)
@@ -147,7 +155,9 @@ impl App {
             .on_press(Message::ToggleSftpPanel);
 
             let overlay = container(
-                iced::widget::mouse_area(sftp_panel).on_press(Message::Ignore),
+                iced::widget::mouse_area(sftp_panel)
+                    .on_move(Message::SftpPanelCursorMoved)
+                    .on_press(Message::Ignore),
             )
             .width(Length::Fill)
             .height(Length::Fill)
@@ -237,4 +247,12 @@ impl App {
         }
     }
 
+}
+
+fn sftp_name_column_width(panel_width: f32) -> f32 {
+    let content_width = (panel_width - 10.0 - 24.0).max(0.0);
+    let panels_width = (content_width - 12.0).max(0.0);
+    let panel_width = (panels_width / 2.0).max(0.0);
+    let list_width = (panel_width - 12.0).max(0.0);
+    (list_width - 64.0 - 120.0).max(100.0)
 }

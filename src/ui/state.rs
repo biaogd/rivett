@@ -1,6 +1,7 @@
 use crate::core::session::Session;
 use crate::terminal::{TerminalDamage, TerminalEmulator};
 use iced::widget::canvas::Cache;
+use iced::Point;
 use std::sync::Arc;
 use std::sync::mpsc;
 use tokio::sync::Mutex;
@@ -60,6 +61,64 @@ pub struct SftpEntry {
     pub size: Option<u64>,
     pub modified: Option<chrono::DateTime<chrono::Local>>,
     pub is_dir: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SftpTransferDirection {
+    Upload,
+    Download,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SftpTransferStatus {
+    Queued,
+    Uploading,
+    Completed,
+    Failed(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct SftpTransfer {
+    pub id: uuid::Uuid,
+    pub tab_index: usize,
+    pub name: String,
+    pub direction: SftpTransferDirection,
+    pub status: SftpTransferStatus,
+    pub bytes_sent: u64,
+    pub bytes_total: u64,
+    pub local_path: String,
+    pub remote_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SftpTransferUpdate {
+    pub id: uuid::Uuid,
+    pub tab_index: usize,
+    pub bytes_sent: u64,
+    pub bytes_total: u64,
+    pub status: Option<SftpTransferStatus>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SftpPane {
+    Local,
+    Remote,
+}
+
+#[derive(Debug, Clone)]
+pub struct SftpContextMenu {
+    pub pane: SftpPane,
+    pub name: String,
+    pub position: Point,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SftpContextAction {
+    Upload,
+    Download,
+    Rename,
+    Delete,
 }
 
 impl Clone for SessionTab {

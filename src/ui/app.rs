@@ -1,11 +1,16 @@
 use iced::{Settings, Task, Theme};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::core::SessionManager;
 use crate::platform::PlatformServices;
 use crate::settings::{AppSettings, SettingsStorage};
 use crate::session::{SessionConfig, SessionStorage};
 use super::message::{ActiveView, Message};
-use super::state::{ConnectionTestStatus, SessionTab, SftpEntry};
+use super::state::{
+    ConnectionTestStatus, SessionTab, SftpContextMenu, SftpEntry, SftpTransfer,
+    SftpTransferUpdate,
+};
 
 #[derive(Debug)]
 pub struct App {
@@ -64,6 +69,17 @@ pub struct App {
     pub(in crate::ui) sftp_remote_entries: Vec<SftpEntry>,
     pub(in crate::ui) sftp_remote_error: Option<String>,
     pub(in crate::ui) sftp_remote_loading: bool,
+    pub(in crate::ui) sftp_local_selected: Option<String>,
+    pub(in crate::ui) sftp_remote_selected: Option<String>,
+    pub(in crate::ui) sftp_local_last_click: Option<(String, std::time::Instant)>,
+    pub(in crate::ui) sftp_remote_last_click: Option<(String, std::time::Instant)>,
+    pub(in crate::ui) sftp_context_menu: Option<SftpContextMenu>,
+    pub(in crate::ui) sftp_panel_cursor: Option<iced::Point>,
+    pub(in crate::ui) sftp_transfers: Vec<SftpTransfer>,
+    pub(in crate::ui) sftp_transfer_tx: tokio::sync::mpsc::UnboundedSender<SftpTransferUpdate>,
+    pub(in crate::ui) sftp_transfer_rx:
+        Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<SftpTransferUpdate>>>,
+    pub(in crate::ui) sftp_max_concurrent: usize,
 }
 
 impl App {
@@ -78,6 +94,9 @@ impl App {
         let sessions_tab = SessionTab::new("Sessions");
 
         let (main_window, open_task) = iced::window::open(iced::window::Settings::default());
+
+        let (sftp_transfer_tx, sftp_transfer_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SftpTransferUpdate>();
 
         (
             Self {
@@ -125,13 +144,25 @@ impl App {
                 sftp_panel_open: false,
                 sftp_panel_width: 520.0,
                 sftp_dragging: false,
-                sftp_local_path: "~/".to_string(),
+                sftp_local_path: dirs::home_dir()
+                    .map(|path| path.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "~".to_string()),
                 sftp_remote_path: ".".to_string(),
                 sftp_local_entries: Vec::new(),
                 sftp_local_error: None,
                 sftp_remote_entries: Vec::new(),
                 sftp_remote_error: None,
                 sftp_remote_loading: false,
+                sftp_local_selected: None,
+                sftp_remote_selected: None,
+                sftp_local_last_click: None,
+                sftp_remote_last_click: None,
+                sftp_context_menu: None,
+                sftp_panel_cursor: None,
+                sftp_transfers: Vec::new(),
+                sftp_transfer_tx,
+                sftp_transfer_rx: Arc::new(Mutex::new(sftp_transfer_rx)),
+                sftp_max_concurrent: 2,
             },
             open_task.map(Message::WindowOpened), // Open the main window
         )

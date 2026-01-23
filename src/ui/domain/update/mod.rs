@@ -5,11 +5,15 @@ mod window;
 
 use iced::Task;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use crate::core::session::Session;
 use crate::ui::message::{ActiveView, Message};
-use crate::ui::state::{SessionState, SftpEntry};
+use crate::ui::state::{
+    SessionState, SftpContextAction, SftpContextMenu, SftpEntry, SftpPane,
+    SftpTransfer, SftpTransferDirection, SftpTransferStatus, SftpTransferUpdate,
+};
 use crate::ui::App;
 
 impl App {
@@ -93,6 +97,12 @@ impl App {
             Message::ToggleSftpPanel => {
                 self.sftp_panel_open = !self.sftp_panel_open;
                 self.sftp_dragging = false;
+                self.sftp_local_selected = None;
+                self.sftp_remote_selected = None;
+                self.sftp_local_last_click = None;
+                self.sftp_remote_last_click = None;
+                self.sftp_context_menu = None;
+                self.sftp_panel_cursor = None;
                 if self.sftp_panel_open {
                     if self.window_width > 0 {
                         self.sftp_panel_width =
@@ -129,6 +139,9 @@ impl App {
             }
             Message::SftpLocalPathChanged(path) => {
                 self.sftp_local_path = path;
+                self.sftp_local_selected = None;
+                self.sftp_local_last_click = None;
+                self.sftp_context_menu = None;
                 let result = load_local_entries(&self.sftp_local_path);
                 match result {
                     Ok(entries) => {
@@ -143,6 +156,9 @@ impl App {
             }
             Message::SftpRemotePathChanged(path) => {
                 self.sftp_remote_path = path;
+                self.sftp_remote_selected = None;
+                self.sftp_remote_last_click = None;
+                self.sftp_context_menu = None;
                 if let Some(task) = start_remote_list(self, self.active_tab) {
                     return task;
                 }
@@ -153,14 +169,157 @@ impl App {
                 }
                 self.sftp_remote_loading = false;
                 match result {
-                    Ok(entries) => {
+                    Ok((entries, resolved_path)) => {
                         self.sftp_remote_entries = entries;
                         self.sftp_remote_error = None;
+                        if let Some(path) = resolved_path {
+                            self.sftp_remote_path = path;
+                        }
                     }
                     Err(err) => {
                         self.sftp_remote_entries.clear();
                         self.sftp_remote_error = Some(err);
                     }
+                }
+            }
+            Message::SftpPanelCursorMoved(point) => {
+                self.sftp_panel_cursor = Some(point);
+            }
+            Message::SftpLocalEntryPressed(name, is_dir) => {
+                let now = Instant::now();
+                let is_double = self
+                    .sftp_local_last_click
+                    .as_ref()
+                    .map(|(last_name, last_time)| {
+                        last_name == &name
+                            && now.duration_since(*last_time) < Duration::from_millis(400)
+                    })
+                    .unwrap_or(false);
+
+                self.sftp_local_selected = Some(name.clone());
+                self.sftp_local_last_click = Some((name.clone(), now));
+                self.sftp_context_menu = None;
+
+                if is_double && is_dir {
+                    let new_path = join_local_path(&self.sftp_local_path, &name);
+                    self.sftp_local_path = new_path;
+                    self.sftp_local_selected = None;
+                    self.sftp_local_last_click = None;
+                    let result = load_local_entries(&self.sftp_local_path);
+                    match result {
+                        Ok(entries) => {
+                            self.sftp_local_entries = entries;
+                            self.sftp_local_error = None;
+                        }
+                        Err(err) => {
+                            self.sftp_local_entries.clear();
+                            self.sftp_local_error = Some(err);
+                        }
+                    }
+                }
+            }
+            Message::SftpRemoteEntryPressed(name, is_dir) => {
+                let now = Instant::now();
+                let is_double = self
+                    .sftp_remote_last_click
+                    .as_ref()
+                    .map(|(last_name, last_time)| {
+                        last_name == &name
+                            && now.duration_since(*last_time) < Duration::from_millis(400)
+                    })
+                    .unwrap_or(false);
+
+                self.sftp_remote_selected = Some(name.clone());
+                self.sftp_remote_last_click = Some((name.clone(), now));
+                self.sftp_context_menu = None;
+
+                if is_double && is_dir {
+                    self.sftp_remote_path = join_remote_path(&self.sftp_remote_path, &name);
+                    self.sftp_remote_selected = None;
+                    self.sftp_remote_last_click = None;
+                    if let Some(task) = start_remote_list(self, self.active_tab) {
+                        return task;
+                    }
+                }
+            }
+            Message::SftpOpenContextMenu(pane, name) => {
+                let position = self.sftp_panel_cursor.unwrap_or(iced::Point::new(16.0, 16.0));
+                match pane {
+                    SftpPane::Local => {
+                        self.sftp_local_selected = Some(name.clone());
+                    }
+                    SftpPane::Remote => {
+                        self.sftp_remote_selected = Some(name.clone());
+                    }
+                }
+                self.sftp_context_menu = Some(SftpContextMenu {
+                    pane,
+                    name,
+                    position,
+                });
+            }
+            Message::SftpCloseContextMenu => {
+                self.sftp_context_menu = None;
+            }
+            Message::SftpContextAction(pane, name, action) => {
+                self.sftp_context_menu = None;
+                if pane == SftpPane::Local && action == SftpContextAction::Upload {
+                    if let Some(task) = start_upload(self, name.clone()) {
+                        return task;
+                    }
+                }
+                if pane == SftpPane::Remote && action == SftpContextAction::Download {
+                    if let Some(task) = start_download(self, name) {
+                        return task;
+                    }
+                }
+            }
+            Message::SftpTransferUpdate(update) => {
+                let status = update.status.clone();
+                let mut should_refresh = false;
+                let mut error_message: Option<String> = None;
+                if let Some(transfer) = self
+                    .sftp_transfers
+                    .iter_mut()
+                    .find(|transfer| transfer.id == update.id)
+                {
+                    transfer.bytes_sent = update.bytes_sent;
+                    transfer.bytes_total = update.bytes_total;
+                    if let Some(status_value) = status.clone() {
+                        transfer.status = status_value;
+                    }
+                    if matches!(status, Some(SftpTransferStatus::Completed))
+                        && transfer.direction == SftpTransferDirection::Upload
+                        && update.tab_index == self.active_tab
+                        && self.sftp_panel_open
+                    {
+                        should_refresh = true;
+                    }
+                    if let Some(SftpTransferStatus::Failed(error)) = status.clone() {
+                        if update.tab_index == self.active_tab {
+                            error_message = Some(error);
+                        }
+                    }
+                }
+
+                if let Some(message) = error_message {
+                    self.sftp_remote_error = Some(message);
+                }
+
+                let mut tasks = Vec::new();
+                if should_refresh {
+                    if let Some(task) = start_remote_list(self, self.active_tab) {
+                        tasks.push(task);
+                    }
+                }
+                if matches!(status, Some(SftpTransferStatus::Completed | SftpTransferStatus::Failed(_)))
+                {
+                    if let Some(task) = schedule_transfer_tasks(self) {
+                        tasks.push(task);
+                    }
+                }
+                if !tasks.is_empty() {
+                    return Task::batch(tasks);
                 }
             }
             Message::ShowPortForwarding => {
@@ -544,6 +703,31 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
+fn join_local_path(base: &str, name: &str) -> String {
+    let expanded = expand_tilde(base);
+    let base_path = if expanded.trim().is_empty() {
+        expand_tilde("~")
+    } else {
+        expanded
+    };
+
+    std::path::Path::new(&base_path)
+        .join(name)
+        .to_string_lossy()
+        .to_string()
+}
+
+fn join_remote_path(base: &str, name: &str) -> String {
+    let trimmed = base.trim();
+    if trimmed.is_empty() || trimmed == "~" {
+        format!("./{}", name)
+    } else if trimmed.ends_with('/') {
+        format!("{}{}", trimmed, name)
+    } else {
+        format!("{}/{}", trimmed, name)
+    }
+}
+
 fn start_remote_list(app: &mut App, tab_index: usize) -> Option<Task<Message>> {
     if tab_index == 0 || tab_index >= app.tabs.len() {
         app.sftp_remote_entries.clear();
@@ -567,7 +751,6 @@ fn start_remote_list(app: &mut App, tab_index: usize) -> Option<Task<Message>> {
     let path = normalize_remote_path(&app.sftp_remote_path);
     app.sftp_remote_loading = true;
     app.sftp_remote_error = None;
-
     Some(Task::perform(
         async move { load_remote_entries(session, sftp_session, path).await },
         move |result| Message::SftpRemoteLoaded(tab_index, result),
@@ -578,10 +761,10 @@ async fn load_remote_entries(
     session: crate::core::session::Session,
     sftp_session: Arc<Mutex<Option<russh_sftp::client::SftpSession>>>,
     path: String,
-) -> Result<Vec<SftpEntry>, String> {
+) -> Result<(Vec<SftpEntry>, Option<String>), String> {
     use chrono::TimeZone;
 
-    let dir_entries = {
+    let (dir_entries, resolved_path) = {
         let mut guard = sftp_session.lock().await;
         if guard.is_none() {
             let ssh = match session.backend.as_ref() {
@@ -596,9 +779,18 @@ async fn load_remote_entries(
             *guard = Some(created);
         }
         let sftp = guard.as_ref().ok_or_else(|| "SFTP not available".to_string())?;
-        sftp.read_dir(path)
+        let resolved = if path == "." || path.starts_with("./") {
+            sftp.canonicalize(".")
+                .await
+                .ok()
+        } else {
+            None
+        };
+        let entries = sftp
+            .read_dir(path)
             .await
-            .map_err(|e| format!("Failed to read remote dir: {}", e))?
+            .map_err(|e| format!("Failed to read remote dir: {}", e))?;
+        (entries, resolved)
     };
 
     let mut entries = Vec::new();
@@ -626,7 +818,7 @@ async fn load_remote_entries(
         _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
 
-    Ok(entries)
+    Ok((entries, resolved_path))
 }
 
 fn normalize_remote_path(path: &str) -> String {
@@ -638,4 +830,401 @@ fn normalize_remote_path(path: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+fn start_upload(app: &mut App, name: String) -> Option<Task<Message>> {
+    if app.active_tab == 0 || app.active_tab >= app.tabs.len() {
+        app.sftp_remote_error = Some("No active SSH session".to_string());
+        return None;
+    }
+
+    let is_dir = app
+        .sftp_local_entries
+        .iter()
+        .find(|entry| entry.name == name)
+        .map(|entry| entry.is_dir)
+        .unwrap_or(false);
+
+    if is_dir {
+        app.sftp_remote_error = Some("Directory upload not supported yet".to_string());
+        return None;
+    }
+
+    let tab_index = app.active_tab;
+    let local_path = join_local_path(&app.sftp_local_path, &name);
+    let remote_path = join_remote_path(&app.sftp_remote_path, &name);
+    let transfer_id = uuid::Uuid::new_v4();
+
+    app.sftp_transfers.push(SftpTransfer {
+        id: transfer_id,
+        tab_index,
+        name: name.clone(),
+        direction: SftpTransferDirection::Upload,
+        status: SftpTransferStatus::Queued,
+        bytes_sent: 0,
+        bytes_total: 0,
+        local_path: local_path.clone(),
+        remote_path: remote_path.clone(),
+    });
+    app.sftp_remote_error = None;
+
+    schedule_transfer_tasks(app)
+}
+
+async fn upload_local_file(
+    session: crate::core::session::Session,
+    sftp_session: Arc<Mutex<Option<russh_sftp::client::SftpSession>>>,
+    local_path: String,
+    remote_path: String,
+    transfer_id: uuid::Uuid,
+    tab_index: usize,
+    tx: tokio::sync::mpsc::UnboundedSender<SftpTransferUpdate>,
+) -> Result<(), String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let send_status = |status| {
+        let _ = tx.send(SftpTransferUpdate {
+            id: transfer_id,
+            tab_index,
+            bytes_sent: 0,
+            bytes_total: 0,
+            status: Some(status),
+        });
+    };
+
+    let metadata = tokio::fs::metadata(&local_path)
+        .await
+        .map_err(|e| {
+            let msg = format!("Failed to stat local file: {}", e);
+            send_status(SftpTransferStatus::Failed(msg.clone()));
+            msg
+        })?;
+    if metadata.is_dir() {
+        let msg = "Directory upload not supported yet".to_string();
+        send_status(SftpTransferStatus::Failed(msg.clone()));
+        return Err(msg);
+    }
+
+    let mut local_file = tokio::fs::File::open(&local_path)
+        .await
+        .map_err(|e| {
+            let msg = format!("Failed to open local file: {}", e);
+            send_status(SftpTransferStatus::Failed(msg.clone()));
+            msg
+        })?;
+
+    let total = metadata.len();
+    let _ = tx.send(SftpTransferUpdate {
+        id: transfer_id,
+        tab_index,
+        bytes_sent: 0,
+        bytes_total: total,
+        status: Some(SftpTransferStatus::Uploading),
+    });
+
+    let mut remote_file = {
+        let mut guard = sftp_session.lock().await;
+        if guard.is_none() {
+            let ssh = match session.backend.as_ref() {
+                crate::core::backend::SessionBackend::Ssh { session, .. } => session.clone(),
+                _ => return Err("No SSH session".to_string()),
+            };
+            let mut ssh_guard = ssh.lock().await;
+            let created = ssh_guard
+                .open_sftp()
+                .await
+                .map_err(|e| {
+                    let msg = format!("SFTP init failed: {}", e);
+                    send_status(SftpTransferStatus::Failed(msg.clone()));
+                    msg
+                })?;
+            *guard = Some(created);
+        }
+        let sftp = guard.as_ref().ok_or_else(|| "SFTP not available".to_string())?;
+        sftp.create(remote_path)
+            .await
+            .map_err(|e| {
+                let msg = format!("Failed to open remote file: {}", e);
+                send_status(SftpTransferStatus::Failed(msg.clone()));
+                msg
+            })?
+    };
+
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut sent: u64 = 0;
+    loop {
+        let read = local_file.read(&mut buffer).await.map_err(|e| {
+            let msg = format!("Upload failed: {}", e);
+            send_status(SftpTransferStatus::Failed(msg.clone()));
+            msg
+        })?;
+        if read == 0 {
+            break;
+        }
+        remote_file.write_all(&buffer[..read]).await.map_err(|e| {
+            let msg = format!("Upload failed: {}", e);
+            send_status(SftpTransferStatus::Failed(msg.clone()));
+            msg
+        })?;
+        sent = sent.saturating_add(read as u64);
+        let _ = tx.send(SftpTransferUpdate {
+            id: transfer_id,
+            tab_index,
+            bytes_sent: sent,
+            bytes_total: total,
+            status: None,
+        });
+    }
+    let _ = remote_file.sync_all().await;
+    let _ = remote_file.shutdown().await;
+
+    let _ = tx.send(SftpTransferUpdate {
+        id: transfer_id,
+        tab_index,
+        bytes_sent: sent,
+        bytes_total: total,
+        status: Some(SftpTransferStatus::Completed),
+    });
+
+    Ok(())
+}
+
+fn start_download(app: &mut App, name: String) -> Option<Task<Message>> {
+    if app.active_tab == 0 || app.active_tab >= app.tabs.len() {
+        app.sftp_remote_error = Some("No active SSH session".to_string());
+        return None;
+    }
+
+    let is_dir = app
+        .sftp_remote_entries
+        .iter()
+        .find(|entry| entry.name == name)
+        .map(|entry| entry.is_dir)
+        .unwrap_or(false);
+
+    if is_dir {
+        app.sftp_remote_error = Some("Directory download not supported yet".to_string());
+        return None;
+    }
+
+    let tab_index = app.active_tab;
+    let local_path = join_local_path(&app.sftp_local_path, &name);
+    let remote_path = join_remote_path(&app.sftp_remote_path, &name);
+    let transfer_id = uuid::Uuid::new_v4();
+
+    app.sftp_transfers.push(SftpTransfer {
+        id: transfer_id,
+        tab_index,
+        name: name.clone(),
+        direction: SftpTransferDirection::Download,
+        status: SftpTransferStatus::Queued,
+        bytes_sent: 0,
+        bytes_total: 0,
+        local_path: local_path.clone(),
+        remote_path: remote_path.clone(),
+    });
+    app.sftp_remote_error = None;
+
+    schedule_transfer_tasks(app)
+}
+
+fn schedule_transfer_tasks(app: &mut App) -> Option<Task<Message>> {
+    let max_concurrent = app.sftp_max_concurrent.max(1);
+    let mut active = app
+        .sftp_transfers
+        .iter()
+        .filter(|transfer| transfer.status == SftpTransferStatus::Uploading)
+        .count();
+
+    let mut tasks = Vec::new();
+    while active < max_concurrent {
+        let Some(index) = app
+            .sftp_transfers
+            .iter()
+            .position(|transfer| transfer.status == SftpTransferStatus::Queued)
+        else {
+            break;
+        };
+
+        let transfer = app.sftp_transfers[index].clone();
+        let tab = match app.tabs.get(transfer.tab_index) {
+            Some(tab) => tab,
+            None => {
+                app.sftp_transfers[index].status =
+                    SftpTransferStatus::Failed("Invalid session tab".to_string());
+                continue;
+            }
+        };
+        let session = match &tab.session {
+            Some(session) => session.clone(),
+            None => {
+                app.sftp_transfers[index].status =
+                    SftpTransferStatus::Failed("No active SSH session".to_string());
+                continue;
+            }
+        };
+
+        let sftp_session = tab.sftp_session.clone();
+        app.sftp_transfers[index].status = SftpTransferStatus::Uploading;
+        active += 1;
+
+        let tx = app.sftp_transfer_tx.clone();
+        tasks.push(Task::perform(
+            async move {
+                run_transfer(session, sftp_session, transfer, tx).await
+            },
+            |_| Message::Ignore,
+        ));
+    }
+
+    if tasks.is_empty() {
+        None
+    } else {
+        Some(Task::batch(tasks))
+    }
+}
+
+async fn run_transfer(
+    session: crate::core::session::Session,
+    sftp_session: Arc<Mutex<Option<russh_sftp::client::SftpSession>>>,
+    transfer: SftpTransfer,
+    tx: tokio::sync::mpsc::UnboundedSender<SftpTransferUpdate>,
+) -> Result<(), String> {
+    match transfer.direction {
+        SftpTransferDirection::Upload => {
+            upload_local_file(
+                session,
+                sftp_session,
+                transfer.local_path,
+                transfer.remote_path,
+                transfer.id,
+                transfer.tab_index,
+                tx,
+            )
+            .await
+        }
+        SftpTransferDirection::Download => {
+            download_remote_file(
+                session,
+                sftp_session,
+                transfer.remote_path,
+                transfer.local_path,
+                transfer.id,
+                transfer.tab_index,
+                tx,
+            )
+            .await
+        }
+    }
+}
+
+async fn download_remote_file(
+    session: crate::core::session::Session,
+    sftp_session: Arc<Mutex<Option<russh_sftp::client::SftpSession>>>,
+    remote_path: String,
+    local_path: String,
+    transfer_id: uuid::Uuid,
+    tab_index: usize,
+    tx: tokio::sync::mpsc::UnboundedSender<SftpTransferUpdate>,
+) -> Result<(), String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let send_status = |status| {
+        let _ = tx.send(SftpTransferUpdate {
+            id: transfer_id,
+            tab_index,
+            bytes_sent: 0,
+            bytes_total: 0,
+            status: Some(status),
+        });
+    };
+
+    let (mut remote_file, total) = {
+        let mut guard = sftp_session.lock().await;
+        if guard.is_none() {
+            let ssh = match session.backend.as_ref() {
+                crate::core::backend::SessionBackend::Ssh { session, .. } => session.clone(),
+                _ => return Err("No SSH session".to_string()),
+            };
+            let mut ssh_guard = ssh.lock().await;
+            let created = ssh_guard
+                .open_sftp()
+                .await
+                .map_err(|e| {
+                    let msg = format!("SFTP init failed: {}", e);
+                    send_status(SftpTransferStatus::Failed(msg.clone()));
+                    msg
+                })?;
+            *guard = Some(created);
+        }
+        let sftp = guard.as_ref().ok_or_else(|| "SFTP not available".to_string())?;
+        let metadata = sftp
+            .metadata(&remote_path)
+            .await
+            .map_err(|e| {
+                let msg = format!("Failed to read remote file: {}", e);
+                send_status(SftpTransferStatus::Failed(msg.clone()));
+                msg
+            })?;
+        let total = metadata.size.unwrap_or(0);
+        let file = sftp.open(&remote_path).await.map_err(|e| {
+            let msg = format!("Failed to open remote file: {}", e);
+            send_status(SftpTransferStatus::Failed(msg.clone()));
+            msg
+        })?;
+        (file, total)
+    };
+
+    let mut local_file = tokio::fs::File::create(&local_path)
+        .await
+        .map_err(|e| {
+            let msg = format!("Failed to create local file: {}", e);
+            send_status(SftpTransferStatus::Failed(msg.clone()));
+            msg
+        })?;
+
+    let _ = tx.send(SftpTransferUpdate {
+        id: transfer_id,
+        tab_index,
+        bytes_sent: 0,
+        bytes_total: total,
+        status: Some(SftpTransferStatus::Uploading),
+    });
+
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut received: u64 = 0;
+    loop {
+        let read = remote_file.read(&mut buffer).await.map_err(|e| {
+            let msg = format!("Download failed: {}", e);
+            send_status(SftpTransferStatus::Failed(msg.clone()));
+            msg
+        })?;
+        if read == 0 {
+            break;
+        }
+        local_file.write_all(&buffer[..read]).await.map_err(|e| {
+            let msg = format!("Download failed: {}", e);
+            send_status(SftpTransferStatus::Failed(msg.clone()));
+            msg
+        })?;
+        received = received.saturating_add(read as u64);
+        let _ = tx.send(SftpTransferUpdate {
+            id: transfer_id,
+            tab_index,
+            bytes_sent: received,
+            bytes_total: total,
+            status: None,
+        });
+    }
+    let _ = local_file.sync_all().await;
+
+    let _ = tx.send(SftpTransferUpdate {
+        id: transfer_id,
+        tab_index,
+        bytes_sent: received,
+        bytes_total: total,
+        status: Some(SftpTransferStatus::Completed),
+    });
+
+    Ok(())
 }

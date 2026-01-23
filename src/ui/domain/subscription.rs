@@ -167,6 +167,49 @@ impl App {
             }
         }
 
+        // SFTP transfer progress subscription
+        struct HashableTransferRx(
+            Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::ui::state::SftpTransferUpdate>>>,
+        );
+
+        impl std::hash::Hash for HashableTransferRx {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                (Arc::as_ptr(&self.0) as usize).hash(state);
+            }
+        }
+        impl PartialEq for HashableTransferRx {
+            fn eq(&self, other: &Self) -> bool {
+                Arc::ptr_eq(&self.0, &other.0)
+            }
+        }
+        impl Eq for HashableTransferRx {}
+        impl Clone for HashableTransferRx {
+            fn clone(&self) -> Self {
+                Self(self.0.clone())
+            }
+        }
+
+        let transfer_rx = self.sftp_transfer_rx.clone();
+        subs.push(iced::Subscription::run_with(
+            HashableTransferRx(transfer_rx),
+            |HashableTransferRx(rx)| {
+                let rx = rx.clone();
+                iced::futures::stream::unfold(rx, move |rx| async move {
+                    let result = {
+                        let mut guard = rx.lock().await;
+                        guard.recv().await
+                    };
+                    match result {
+                        Some(update) => Some((Message::SftpTransferUpdate(update), rx)),
+                        None => {
+                            std::future::pending::<()>().await;
+                            None
+                        }
+                    }
+                })
+            },
+        ));
+
         iced::Subscription::batch(subs)
     }
 }
