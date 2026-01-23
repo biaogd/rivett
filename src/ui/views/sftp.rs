@@ -1,5 +1,5 @@
 use iced::widget::{
-    button, column, container, progress_bar, row, scrollable, text, text_input, Id,
+    button, column, container, progress_bar, row, scrollable, svg, text, text_input, Id,
 };
 use iced::widget::text::Wrapping;
 use iced::{Alignment, Element, Length, Padding};
@@ -480,6 +480,74 @@ fn pad_trbl(top: u16, right: u16, bottom: u16, left: u16) -> Padding {
     }
 }
 
+fn file_icon(name: &str, is_dir: bool) -> (fn(&iced::Theme) -> iced::widget::text::Style, Element<'static, Message>) {
+    if is_dir {
+        return (ui_style::header_text, icon_svg(FOLDER_SVG));
+    }
+
+    let lower = name.to_lowercase();
+    if is_image_file(&lower) {
+        return (ui_style::muted_text, icon_svg(IMAGE_SVG));
+    }
+    if is_archive_file(&lower) {
+        return (ui_style::muted_text, icon_svg(ARCHIVE_SVG));
+    }
+    if is_executable_file(&lower) {
+        return (ui_style::muted_text, icon_svg(EXEC_SVG));
+    }
+
+    (ui_style::header_text, icon_svg(FILE_SVG))
+}
+
+fn icon_svg(data: &str) -> Element<'static, Message> {
+    let handle = svg::Handle::from_memory(data.as_bytes().to_vec());
+    container(svg(handle).width(Length::Fixed(14.0)).height(Length::Fixed(14.0)))
+        .width(Length::Fixed(18.0))
+        .height(Length::Fixed(16.0))
+        .center_x(Length::Fixed(18.0))
+        .center_y(Length::Fixed(16.0))
+        .into()
+}
+
+fn is_image_file(name: &str) -> bool {
+    matches!(
+        name.rsplit('.').next(),
+        Some("png")
+            | Some("jpg")
+            | Some("jpeg")
+            | Some("gif")
+            | Some("bmp")
+            | Some("webp")
+            | Some("svg")
+    )
+}
+
+fn is_archive_file(name: &str) -> bool {
+    matches!(
+        name.rsplit('.').next(),
+        Some("zip")
+            | Some("tar")
+            | Some("gz")
+            | Some("tgz")
+            | Some("bz2")
+            | Some("7z")
+            | Some("rar")
+    )
+}
+
+fn is_executable_file(name: &str) -> bool {
+    matches!(
+        name.rsplit('.').next(),
+        Some("sh") | Some("bat") | Some("exe") | Some("app") | Some("run")
+    )
+}
+
+const FILE_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="#9AA0A6" stroke-width="1.6"/><path d="M14 3v6h6" stroke="#9AA0A6" stroke-width="1.6"/></svg>"###;
+const FOLDER_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z" stroke="#0A84FF" stroke-width="1.6"/></svg>"###;
+const IMAGE_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="5" width="16" height="14" rx="2" stroke="#AF52DE" stroke-width="1.6"/><path d="M8 13l3-3 5 6" stroke="#AF52DE" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="9" r="1.5" fill="#AF52DE"/></svg>"###;
+const ARCHIVE_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="3" width="12" height="4" stroke="#FF9F0A" stroke-width="1.6"/><rect x="6" y="7" width="12" height="14" rx="2" stroke="#FF9F0A" stroke-width="1.6"/><path d="M12 10v8" stroke="#FF9F0A" stroke-width="1.6"/><path d="M10 12h4" stroke="#FF9F0A" stroke-width="1.6"/></svg>"###;
+const EXEC_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="16" height="16" rx="3" stroke="#34C759" stroke-width="1.6"/><path d="M9 8l6 4-6 4V8Z" fill="#34C759"/></svg>"###;
+
 fn file_row(
     name: String,
     size: String,
@@ -491,17 +559,14 @@ fn file_row(
     pane: SftpPane,
     context_menu: Option<&SftpContextMenu>,
 ) -> Element<'static, Message> {
-    let name_style = if is_dir {
-        ui_style::header_text
-    } else {
-        ui_style::muted_text
-    };
+    let (name_style, icon) = file_icon(&name, is_dir);
 
-    let display_name = truncate_name(&name, name_column_width, 13.0);
+    let display_name = truncate_name(&name, name_column_width, 14.0);
     let row_button = button(
         row![
+            icon,
             text(display_name)
-                .size(13)
+                .size(14)
                 .style(name_style)
                 .width(Length::Fixed(name_column_width))
                 .wrapping(Wrapping::None),
@@ -518,7 +583,7 @@ fn file_row(
         ]
         .align_y(Alignment::Center),
     )
-    .padding(pad_trbl(2, 6, 2, 14))
+    .padding(pad_trbl(2, 6, 2, 10))
     .width(Length::Fill)
     .style(ui_style::sftp_row_button(selected))
     .on_press(on_press);
