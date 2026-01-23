@@ -1,6 +1,7 @@
 use crate::session::SessionConfig;
 use crate::ui::Message;
 use crate::ui::style as ui_style;
+use crate::ui::state::ConnectionTestStatus;
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Length};
 
@@ -11,8 +12,12 @@ pub fn render<'a>(
     form_host: &'a str,
     form_port: &'a str,
     form_username: &'a str,
-    _form_password: &'a str,
-    _auth_method_password: bool,
+    form_password: &'a str,
+    form_key_path: &'a str,
+    form_key_passphrase: &'a str,
+    auth_method_password: bool,
+    show_password: bool,
+    connection_test_status: &'a ConnectionTestStatus,
     validation_error: Option<&'a String>,
 ) -> Element<'a, Message> {
     let is_new = editing_session
@@ -33,12 +38,12 @@ pub fn render<'a>(
     // Header with title and close button
     let header = row![
         column![
-            text(title).size(20),
-            text(subtitle).size(13).style(ui_style::muted_text),
+            text(title).size(18).style(ui_style::header_text),
+            text(subtitle).size(12).style(ui_style::muted_text),
         ]
-        .spacing(4),
+        .spacing(3),
         container("").width(Length::Fill),
-        button(text("✕").size(16))
+        button(text("✕").size(13))
             .padding(8)
             .style(ui_style::tab_close_button)
             .on_press(Message::CancelSessionEdit),
@@ -46,19 +51,21 @@ pub fn render<'a>(
     .align_y(Alignment::Center)
     .spacing(12);
 
-    // Tab-like headers (currently just showing GENERAL)
     let tabs = row![
-        container(text("GENERAL").size(11))
-            .padding([8, 16])
-            .style(ui_style::active_tab_header),
-        container(text("AUTHENTICATION").size(11))
-            .padding([8, 16])
-            .style(ui_style::inactive_tab_header),
-        container(text("ADVANCED").size(11))
-            .padding([8, 16])
-            .style(ui_style::inactive_tab_header),
+        button(text("General").size(12))
+            .padding([6, 12])
+            .style(ui_style::compact_tab(true))
+            .on_press(Message::Ignore),
+        button(text("Auth").size(12))
+            .padding([6, 12])
+            .style(ui_style::compact_tab(false))
+            .on_press(Message::Ignore),
+        button(text("Advanced").size(12))
+            .padding([6, 12])
+            .style(ui_style::compact_tab(false))
+            .on_press(Message::Ignore),
     ]
-    .spacing(0);
+    .spacing(6);
 
     // Error banner
     let error_banner = if let Some(error) = validation_error {
@@ -75,81 +82,198 @@ pub fn render<'a>(
     };
 
     // Form fields
+    let auth_selector = row![
+        button(text("Password").size(12))
+            .padding([6, 12])
+            .style(ui_style::compact_tab(auth_method_password))
+            .on_press(if auth_method_password {
+                Message::Ignore
+            } else {
+                Message::ToggleAuthMethod
+            }),
+        button(text("Private key").size(12))
+            .padding([6, 12])
+            .style(ui_style::compact_tab(!auth_method_password))
+            .on_press(if auth_method_password {
+                Message::ToggleAuthMethod
+            } else {
+                Message::Ignore
+            }),
+    ]
+    .spacing(6);
+
+    let auth_fields = if auth_method_password {
+        let eye_icon = if show_password {
+            iced::widget::svg(iced::widget::svg::Handle::from_memory(
+                include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/eye-off.svg"))
+                    .as_slice(),
+            ))
+            .width(Length::Fixed(14.0))
+            .height(Length::Fixed(14.0))
+        } else {
+            iced::widget::svg(iced::widget::svg::Handle::from_memory(
+                include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/eye.svg"))
+                    .as_slice(),
+            ))
+            .width(Length::Fixed(14.0))
+            .height(Length::Fixed(14.0))
+        };
+
+        column![
+            text("Password").size(12).style(ui_style::muted_text),
+            row![
+                text_input("", form_password)
+                    .on_input(Message::SessionPasswordChanged)
+                    .padding([8, 10])
+                    .size(13)
+                    .style(ui_style::dialog_input)
+                    .secure(!show_password)
+                    .width(Length::Fill),
+                button(eye_icon)
+                    .padding([8, 8])
+                    .style(ui_style::icon_button)
+                    .on_press(Message::TogglePasswordVisibility),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        ]
+        .spacing(6)
+    } else {
+        column![
+            text("Private key path")
+                .size(12)
+                .style(ui_style::muted_text),
+            text_input("~/.ssh/id_rsa", form_key_path)
+                .on_input(Message::SessionKeyPathChanged)
+                .padding([8, 10])
+                .size(13)
+                .style(ui_style::dialog_input),
+            container("").height(8.0),
+            text("Key passphrase (optional)")
+                .size(12)
+                .style(ui_style::muted_text),
+            text_input("", form_key_passphrase)
+                .on_input(Message::SessionKeyPassphraseChanged)
+                .padding([8, 10])
+                .size(13)
+                .style(ui_style::dialog_input)
+                .secure(true),
+        ]
+        .spacing(6)
+    };
+
     let form_content = column![
         // Display Name
         column![
-            text("DISPLAY NAME").size(11).style(ui_style::label_text),
+            text("Display name").size(12).style(ui_style::muted_text),
             text_input("Production Server 01", form_name)
                 .on_input(Message::SessionNameChanged)
-                .padding(10)
-                .size(12),
+                .padding([8, 10])
+                .size(13)
+                .style(ui_style::dialog_input),
         ]
         .spacing(6),
-        container("").height(16.0),
+        container("").height(12.0),
         // Host and Port
         row![
             column![
-                text("HOST ADDRESS").size(11).style(ui_style::label_text),
+                text("Host address").size(12).style(ui_style::muted_text),
                 text_input("192.168.1.1 or example.com", form_host)
                     .on_input(Message::SessionHostChanged)
-                    .padding(10)
-                    .size(12),
-            ]
+                    .padding([8, 10])
+                    .size(13)
+                    .style(ui_style::dialog_input),
+        ]
             .spacing(6)
             .width(Length::FillPortion(3)),
             container("").width(12.0),
             column![
-                text("PORT").size(11).style(ui_style::label_text),
+                text("Port").size(12).style(ui_style::muted_text),
                 text_input("22", form_port)
                     .on_input(Message::SessionPortChanged)
-                    .padding(10)
-                    .size(12)
+                    .padding([8, 10])
+                    .size(13)
+                    .style(ui_style::dialog_input)
                     .width(Length::Fixed(80.0)),
-            ]
+        ]
             .spacing(6)
             .width(Length::FillPortion(1)),
         ],
-        container("").height(16.0),
+        container("").height(12.0),
         // Username
         column![
-            text("USERNAME").size(11).style(ui_style::label_text),
+            text("Username").size(12).style(ui_style::muted_text),
             text_input("root", form_username)
                 .on_input(Message::SessionUsernameChanged)
-                .padding(10)
-                .size(12),
+                .padding([8, 10])
+                .size(13)
+                .style(ui_style::dialog_input),
         ]
         .spacing(6),
+        container("").height(14.0),
+        text("Authentication").size(12).style(ui_style::muted_text),
+        auth_selector,
+        container("").height(8.0),
+        auth_fields,
     ]
     .spacing(0);
 
     // Footer with buttons
-    let footer = row![
-        container("").width(Length::Fill),
-        button(text("Cancel").size(12))
-            .padding([10, 20])
+    let status_text = match connection_test_status {
+        ConnectionTestStatus::Idle => None,
+        ConnectionTestStatus::Testing => Some(text("Testing...").size(12).style(ui_style::muted_text)),
+        ConnectionTestStatus::Success => Some(text("Connection ok").size(12)),
+        ConnectionTestStatus::Failed(err) => Some(
+            text(err)
+                .size(12)
+                .color(iced::Color::from_rgb(0.9, 0.3, 0.3)),
+        ),
+    };
+
+    let test_button = match connection_test_status {
+        ConnectionTestStatus::Testing => button(text("Testing...").size(12))
+            .padding([8, 16])
+            .style(ui_style::secondary_button_style),
+        _ => button(text("Test Connection").size(12))
+            .padding([8, 16])
             .style(ui_style::secondary_button_style)
-            .on_press(Message::CancelSessionEdit),
-        button(text("Create Session").size(12))
-            .padding([10, 20])
-            .style(ui_style::primary_button_style)
-            .on_press(Message::SaveSession),
-    ]
-    .spacing(12)
-    .align_y(Alignment::Center);
+            .on_press(Message::TestConnection),
+    };
+
+    let mut footer = row![test_button];
+    if let Some(status) = status_text {
+        footer = footer.push(status);
+    }
+    footer = footer
+        .push(container("").width(Length::Fill))
+        .push(
+            button(text("Cancel").size(12))
+                .padding([8, 16])
+                .style(ui_style::secondary_button_style)
+                .on_press(Message::CancelSessionEdit),
+        )
+        .push(
+            button(text("Create Session").size(12))
+                .padding([8, 16])
+                .style(ui_style::primary_button_style)
+                .on_press(Message::SaveSession),
+        )
+        .spacing(12)
+        .align_y(Alignment::Center);
 
     // Assemble dialog content
     let dialog_content = column![
         header,
-        container("").height(16.0),
+        container("").height(12.0),
         tabs,
         container("")
             .height(1.0)
             .width(Length::Fill)
             .style(ui_style::divider),
-        container("").height(20.0),
+        container("").height(16.0),
         error_banner,
         form_content,
-        container("").height(24.0),
+        container("").height(20.0),
         footer,
     ]
     .spacing(0)

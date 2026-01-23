@@ -5,7 +5,7 @@ use crate::platform::PlatformServices;
 use crate::settings::{AppSettings, SettingsStorage};
 use crate::session::{SessionConfig, SessionStorage};
 use super::message::{ActiveView, Message};
-use super::state::SessionTab;
+use super::state::{ConnectionTestStatus, SessionTab};
 
 #[derive(Debug)]
 pub struct App {
@@ -32,8 +32,13 @@ pub struct App {
     pub(in crate::ui) form_port: String,
     pub(in crate::ui) form_username: String,
     pub(in crate::ui) form_password: String,
+    pub(in crate::ui) form_key_path: String,
+    pub(in crate::ui) form_key_passphrase: String,
     pub(in crate::ui) auth_method_password: bool,
     pub(in crate::ui) validation_error: Option<String>,
+    pub(in crate::ui) session_search_query: String,
+    pub(in crate::ui) show_password: bool,
+    pub(in crate::ui) connection_test_status: ConnectionTestStatus,
     pub(in crate::ui) window_width: u32,
     pub(in crate::ui) window_height: u32,
     pub(in crate::ui) last_error: Option<(String, std::time::Instant)>, // (error message, timestamp)
@@ -86,8 +91,13 @@ impl App {
                 form_port: "22".to_string(),
                 form_username: String::new(),
                 form_password: String::new(),
+                form_key_path: "~/.ssh/id_rsa".to_string(),
+                form_key_passphrase: String::new(),
                 auth_method_password: true,
                 validation_error: None,
+                session_search_query: String::new(),
+                show_password: false,
+                connection_test_status: ConnectionTestStatus::Idle,
                 window_width: 1024, // Default assumption
                 window_height: 768,
                 last_error: None,

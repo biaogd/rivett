@@ -19,6 +19,7 @@ impl App {
             ),
             ActiveView::SessionManager => views::session_manager::render(
                 &self.saved_sessions,
+                &self.session_search_query,
                 self.editing_session.as_ref(),
                 &self.form_name,
                 &self.form_host,
@@ -154,7 +155,11 @@ impl App {
                 &self.form_port,
                 &self.form_username,
                 &self.form_password,
+                &self.form_key_path,
+                &self.form_key_passphrase,
                 self.auth_method_password,
+                self.show_password,
+                &self.connection_test_status,
                 self.validation_error.as_ref(),
             );
 

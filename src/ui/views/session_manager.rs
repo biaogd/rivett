@@ -2,11 +2,12 @@ use crate::session::SessionConfig;
 use crate::ui::Message;
 use crate::ui::components;
 use crate::ui::style as ui_style;
-use iced::widget::{button, column, container, row, scrollable, text};
+use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 
 pub fn render<'a>(
     saved_sessions: &'a [SessionConfig],
+    search_query: &'a str,
     editing_session: Option<&'a SessionConfig>,
     form_name: &'a str,
     form_host: &'a str,
@@ -30,10 +31,15 @@ pub fn render<'a>(
         open_menu_id,
     );
 
+    let search_input = text_input("Search sessions...", search_query)
+        .on_input(Message::SessionSearchChanged)
+        .padding([8, 12])
+        .size(14)
+        .style(ui_style::search_input)
+        .width(Length::Fill);
+
     let title_bar = row![
-        text("Session Manager")
-            .size(16)
-            .style(ui_style::header_text),
+        search_input,
         container("").width(Length::Fill),
         button(text("+ New").size(12))
             .padding([6, 14])
@@ -45,14 +51,40 @@ pub fn render<'a>(
     .padding([10, 16]);
 
     // Session list (full width now, no side panel)
-    let session_list: Element<Message> = if saved_sessions.is_empty() {
+    let query = search_query.trim().to_lowercase();
+    let filtered: Vec<&SessionConfig> = if query.is_empty() {
+        saved_sessions.iter().collect()
+    } else {
+        saved_sessions
+            .iter()
+            .filter(|session| {
+                let name = session.name.to_lowercase();
+                let host = session.host.to_lowercase();
+                let user = session.username.to_lowercase();
+                name.contains(&query) || host.contains(&query) || user.contains(&query)
+            })
+            .collect()
+    };
+
+    let session_list: Element<Message> = if filtered.is_empty() {
+        let empty_title = if saved_sessions.is_empty() {
+            "No saved sessions"
+        } else {
+            "No matching sessions"
+        };
+        let empty_hint = if saved_sessions.is_empty() {
+            "Click '+ New' to create"
+        } else {
+            "Try a different search"
+        };
+
         column![
             container("").height(Length::Fixed(60.0)),
-            text("No saved sessions")
+            text(empty_title)
                 .size(14)
                 .style(ui_style::muted_text),
             container("").height(Length::Fixed(8.0)),
-            text("Click '+ New' to create")
+            text(empty_hint)
                 .size(12)
                 .style(ui_style::muted_text),
         ]
@@ -68,7 +100,7 @@ pub fn render<'a>(
                 .floor()
                 .max(1.0) as usize;
 
-            let chunks = saved_sessions.chunks(cols);
+            let chunks = filtered.chunks(cols);
             let mut content = column![].spacing(spacing).padding(12);
 
             for chunk in chunks {

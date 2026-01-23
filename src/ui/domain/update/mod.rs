@@ -125,6 +125,12 @@ impl App {
             | Message::SessionPortChanged(_)
             | Message::SessionUsernameChanged(_)
             | Message::SessionPasswordChanged(_)
+            | Message::TogglePasswordVisibility
+            | Message::SessionKeyPathChanged(_)
+            | Message::SessionKeyPassphraseChanged(_)
+            | Message::SessionSearchChanged(_)
+            | Message::TestConnection
+            | Message::TestConnectionResult(_)
             | Message::ToggleSessionMenu(_)
             | Message::CloseSessionMenu => {
                 return sessions::handle(self, message);
@@ -364,25 +370,27 @@ impl App {
                         let host = saved_session.host.clone();
                         let port = saved_session.port;
                         let username = saved_session.username.clone();
-                        let password = saved_session.password.clone().unwrap_or_default();
+                        let password = saved_session.password.clone();
+                        let auth_method = saved_session.auth_method.clone();
+                        let key_passphrase = saved_session.key_passphrase.clone();
 
                         return Task::perform(
                             async move {
-                                // Add timeout wrapper
-                                match tokio::time::timeout(
-                                    std::time::Duration::from_secs(10),
-                                    crate::ssh::SshSession::connect(
-                                        &host, port, &username, &password,
-                                    ),
+                                match crate::ssh::SshSession::connect(
+                                    &host,
+                                    port,
+                                    &username,
+                                    auth_method,
+                                    password,
+                                    key_passphrase,
                                 )
                                 .await
                                 {
-                                    Ok(Ok((session, rx))) => Ok((
+                                    Ok((session, rx)) => Ok((
                                         Arc::new(Mutex::new(session)),
                                         Arc::new(Mutex::new(rx)),
                                     )),
-                                    Ok(Err(e)) => Err(e.to_string()),
-                                    Err(_) => Err("Connection timeout (10s)".to_string()),
+                                    Err(e) => Err(e.to_string()),
                                 }
                             },
                             move |result| Message::SessionConnected(result, tab_index),

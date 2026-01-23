@@ -8,7 +8,10 @@ pub struct SessionConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
+    #[serde(default)]
     pub password: Option<String>,
+    #[serde(default)]
+    pub key_passphrase: Option<String>,
     pub auth_method: AuthMethod,
     pub color: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -31,6 +34,7 @@ impl SessionConfig {
             port,
             username,
             password: None,
+            key_passphrase: None,
             auth_method: AuthMethod::PrivateKey {
                 path: String::from("~/.ssh/id_rsa"),
             },

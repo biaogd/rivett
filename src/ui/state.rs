@@ -35,6 +35,14 @@ pub struct SessionTab {
     pub pending_damage_lines: Vec<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConnectionTestStatus {
+    Idle,
+    Testing,
+    Success,
+    Failed(String),
+}
+
 impl Clone for SessionTab {
     fn clone(&self) -> Self {
         Self {

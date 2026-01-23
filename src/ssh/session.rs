@@ -1,9 +1,12 @@
 use anyhow::Result;
+use dirs::home_dir;
 use russh::{ChannelId, client};
+use russh_keys::key::KeyPair;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use super::connection::SshClient;
+use crate::session::config::AuthMethod;
 
 use std::fmt;
 
@@ -12,6 +15,10 @@ pub struct SshSession {
     session: client::Handle<SshClient>,
     active_channel: Option<russh::Channel<client::Msg>>,
 }
+
+const CONNECT_TIMEOUT_SECS: u64 = 10;
+const KEEPALIVE_INTERVAL_SECS: u64 = 30;
+const KEEPALIVE_MAX: usize = 3;
 
 impl fmt::Debug for SshSession {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -24,10 +31,14 @@ impl SshSession {
         host: &str,
         port: u16,
         username: &str,
-        password: &str,
+        auth_method: AuthMethod,
+        password: Option<String>,
+        key_passphrase: Option<String>,
     ) -> Result<(Self, mpsc::UnboundedReceiver<Vec<u8>>)> {
         let config = client::Config {
-            inactivity_timeout: None, // Disable local timeout, rely on TCP keepalive or server timeout
+            inactivity_timeout: None,
+            keepalive_interval: Some(std::time::Duration::from_secs(KEEPALIVE_INTERVAL_SECS)),
+            keepalive_max: KEEPALIVE_MAX,
             ..Default::default()
         };
         let config = Arc::new(config);
@@ -39,32 +50,64 @@ impl SshSession {
         let sh = SshClient::new(tx);
 
         let addr = format!("{}:{}", host, port);
-        // Connect
-        let mut session = client::connect(config, addr, sh).await?;
+        let timeout = std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS);
+        let connect_result = tokio::time::timeout(timeout, async move {
+            let mut session = client::connect(config, addr, sh).await?;
 
-        // Authenticate (Password)
-        // TODO: Support agent auth or key auth
-        if !password.is_empty() {
-            let auth_res = session.authenticate_password(username, password).await?;
-            if !auth_res {
-                return Err(anyhow::anyhow!("Authentication failed"));
+            match auth_method {
+                AuthMethod::Password => {
+                    let password = password.unwrap_or_default();
+                    if password.trim().is_empty() {
+                        return Err(anyhow::anyhow!("Password required for authentication"));
+                    }
+                    let auth_res = session.authenticate_password(username, password).await?;
+                    if !auth_res {
+                        return Err(anyhow::anyhow!("Authentication failed"));
+                    }
+                }
+                AuthMethod::PrivateKey { path } => {
+                    let expanded = Self::expand_tilde(&path);
+                    let key: KeyPair =
+                        russh_keys::load_secret_key(&expanded, key_passphrase.as_deref())?;
+                    let auth_res = session
+                        .authenticate_publickey(username, Arc::new(key))
+                        .await?;
+                    if !auth_res {
+                        return Err(anyhow::anyhow!("Authentication failed"));
+                    }
+                }
             }
-        } else {
-            let auth_res = session.authenticate_none(username).await?;
-            if !auth_res {
-                return Err(anyhow::anyhow!(
-                    "Authentication failed (no password provided and none auth failed)"
-                ));
-            }
+
+            Ok((
+                Self {
+                    session,
+                    active_channel: None,
+                },
+                rx,
+            ))
+        })
+        .await;
+
+        match connect_result {
+            Ok(result) => result,
+            Err(_) => Err(anyhow::anyhow!(
+                "Connection timeout ({}s)",
+                CONNECT_TIMEOUT_SECS
+            )),
         }
+    }
 
-        Ok((
-            Self {
-                session,
-                active_channel: None,
-            },
-            rx,
-        ))
+    fn expand_home(path: &str) -> Option<String> {
+        if !path.starts_with("~/") {
+            return None;
+        }
+        let home = home_dir()?;
+        let rest = path.trim_start_matches("~/");
+        Some(home.join(rest).to_string_lossy().to_string())
+    }
+
+    fn expand_tilde(path: &str) -> String {
+        Self::expand_home(path).unwrap_or_else(|| path.to_string())
     }
 
     #[allow(dead_code)]

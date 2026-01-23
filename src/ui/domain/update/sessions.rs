@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::session::SessionConfig;
 use crate::ui::message::{ActiveView, Message};
-use crate::ui::state::SessionTab;
+use crate::ui::state::{ConnectionTestStatus, SessionTab};
 use crate::ui::App;
 
 pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
@@ -21,8 +21,12 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.form_port = String::from("22");
             app.form_username.clear();
             app.form_password.clear();
+            app.form_key_path = "~/.ssh/id_rsa".to_string();
+            app.form_key_passphrase.clear();
             app.auth_method_password = false;
+            app.show_password = false;
             app.validation_error = None;
+            app.connection_test_status = ConnectionTestStatus::Idle;
             Task::none()
         }
         Message::EditSession(id) => {
@@ -42,8 +46,17 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 if let crate::session::config::AuthMethod::Password = session.auth_method {
                     app.auth_method_password = true;
                 }
+                if let crate::session::config::AuthMethod::PrivateKey { ref path } =
+                    session.auth_method
+                {
+                    app.form_key_path = path.clone();
+                    app.auth_method_password = false;
+                }
+                app.form_key_passphrase = session.key_passphrase.clone().unwrap_or_default();
+                app.show_password = false;
                 app.editing_session = Some(session);
                 app.validation_error = None;
+                app.connection_test_status = ConnectionTestStatus::Idle;
             }
             Task::none()
         }
@@ -64,10 +77,15 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 let host = session.host.clone();
                 let port = session.port;
                 let username = session.username.clone();
-                let password = session.password.clone().unwrap_or_default();
+                let password = session.password.clone();
+                let auth_method = session.auth_method.clone();
+                let key_passphrase = session.key_passphrase.clone();
                 println!(
                     "Connecting to {}:{} with user '{}' and password '{}'",
-                    host, port, username, password
+                    host,
+                    port,
+                    username,
+                    password.clone().unwrap_or_default()
                 );
 
                 app.tabs.push(SessionTab::new(&name));
@@ -78,17 +96,20 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
 
                 let connect_task = Task::perform(
                     async move {
-                        match tokio::time::timeout(
-                            std::time::Duration::from_secs(10),
-                            crate::ssh::SshSession::connect(&host, port, &username, &password),
+                        match crate::ssh::SshSession::connect(
+                            &host,
+                            port,
+                            &username,
+                            auth_method,
+                            password,
+                            key_passphrase,
                         )
                         .await
                         {
-                            Ok(Ok((session, rx))) => {
+                            Ok((session, rx)) => {
                                 Ok((Arc::new(Mutex::new(session)), Arc::new(Mutex::new(rx))))
                             }
-                            Ok(Err(e)) => Err(e.to_string()),
-                            Err(_) => Err("Connection timeout (10s)".to_string()),
+                            Err(e) => Err(e.to_string()),
                         }
                     },
                     move |result| Message::SessionConnected(result, tab_index),
@@ -129,6 +150,12 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     return Task::none();
                 }
 
+                if !app.auth_method_password && app.form_key_path.trim().is_empty() {
+                    app.validation_error =
+                        Some("Private key path is required".to_string());
+                    return Task::none();
+                }
+
                 session.name = app.form_name.clone();
                 session.host = app.form_host.clone();
                 session.port = port;
@@ -137,11 +164,17 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 if app.auth_method_password {
                     session.auth_method = crate::session::config::AuthMethod::Password;
                     session.password = Some(app.form_password.clone());
+                    session.key_passphrase = None;
                 } else {
                     session.auth_method = crate::session::config::AuthMethod::PrivateKey {
-                        path: "~/.ssh/id_rsa".to_string(),
+                        path: app.form_key_path.clone(),
                     };
                     session.password = None;
+                    session.key_passphrase = if app.form_key_passphrase.trim().is_empty() {
+                        None
+                    } else {
+                        Some(app.form_key_passphrase.clone())
+                    };
                 }
 
                 if let Err(e) = app
@@ -160,6 +193,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::CancelSessionEdit => {
             app.editing_session = None;
             app.validation_error = None;
+            app.connection_test_status = ConnectionTestStatus::Idle;
             Task::none()
         }
         Message::CloseSessionManager => {
@@ -176,37 +210,147 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::ToggleAuthMethod => {
             app.auth_method_password = !app.auth_method_password;
             app.validation_error = None;
+            app.show_password = false;
+            app.connection_test_status = ConnectionTestStatus::Idle;
             Task::none()
         }
         Message::ClearValidationError => {
             app.validation_error = None;
+            app.connection_test_status = ConnectionTestStatus::Idle;
             Task::none()
         }
         Message::SessionNameChanged(value) => {
             app.form_name = value;
             app.validation_error = None;
+            app.connection_test_status = ConnectionTestStatus::Idle;
             Task::none()
         }
         Message::SessionHostChanged(value) => {
             app.form_host = value;
             app.validation_error = None;
+            app.connection_test_status = ConnectionTestStatus::Idle;
             Task::none()
         }
         Message::SessionPortChanged(value) => {
             if value.chars().all(|c| c.is_numeric()) {
                 app.form_port = value;
                 app.validation_error = None;
+                app.connection_test_status = ConnectionTestStatus::Idle;
             }
             Task::none()
         }
         Message::SessionUsernameChanged(value) => {
             app.form_username = value;
             app.validation_error = None;
+            app.connection_test_status = ConnectionTestStatus::Idle;
             Task::none()
         }
         Message::SessionPasswordChanged(value) => {
             app.form_password = value;
             app.validation_error = None;
+            app.connection_test_status = ConnectionTestStatus::Idle;
+            Task::none()
+        }
+        Message::TogglePasswordVisibility => {
+            app.show_password = !app.show_password;
+            Task::none()
+        }
+        Message::SessionKeyPathChanged(value) => {
+            app.form_key_path = value;
+            app.validation_error = None;
+            app.connection_test_status = ConnectionTestStatus::Idle;
+            Task::none()
+        }
+        Message::SessionKeyPassphraseChanged(value) => {
+            app.form_key_passphrase = value;
+            app.validation_error = None;
+            app.connection_test_status = ConnectionTestStatus::Idle;
+            Task::none()
+        }
+        Message::TestConnection => {
+            let host = app.form_host.trim().to_string();
+            if host.is_empty() {
+                app.connection_test_status =
+                    ConnectionTestStatus::Failed("Host is required".to_string());
+                return Task::none();
+            }
+            let username = app.form_username.trim().to_string();
+            if username.is_empty() {
+                app.connection_test_status =
+                    ConnectionTestStatus::Failed("Username is required".to_string());
+                return Task::none();
+            }
+            let port = match app.form_port.trim().parse::<u16>() {
+                Ok(p) if p > 0 => p,
+                _ => {
+                    app.connection_test_status =
+                        ConnectionTestStatus::Failed("Port must be 1-65535".to_string());
+                    return Task::none();
+                }
+            };
+
+            let auth_method = if app.auth_method_password {
+                crate::session::config::AuthMethod::Password
+            } else {
+                let key_path = app.form_key_path.trim().to_string();
+                if key_path.is_empty() {
+                    app.connection_test_status =
+                        ConnectionTestStatus::Failed("Private key path is required".to_string());
+                    return Task::none();
+                }
+                crate::session::config::AuthMethod::PrivateKey { path: key_path }
+            };
+
+            let password = if app.auth_method_password {
+                let pass = app.form_password.clone();
+                if pass.trim().is_empty() {
+                    app.connection_test_status =
+                        ConnectionTestStatus::Failed("Password is required".to_string());
+                    return Task::none();
+                }
+                Some(pass)
+            } else {
+                None
+            };
+
+            let key_passphrase = if app.auth_method_password {
+                None
+            } else if app.form_key_passphrase.trim().is_empty() {
+                None
+            } else {
+                Some(app.form_key_passphrase.clone())
+            };
+
+            app.connection_test_status = ConnectionTestStatus::Testing;
+
+            Task::perform(
+                async move {
+                    match crate::ssh::SshSession::connect(
+                        &host,
+                        port,
+                        &username,
+                        auth_method,
+                        password,
+                        key_passphrase,
+                    )
+                    .await
+                    {
+                        Ok(_) => Ok(()),
+                        Err(err) => Err(err.to_string()),
+                    }
+                },
+                Message::TestConnectionResult,
+            )
+        }
+        Message::TestConnectionResult(result) => {
+            match result {
+                Ok(_) => app.connection_test_status = ConnectionTestStatus::Success,
+                Err(err) => app.connection_test_status = ConnectionTestStatus::Failed(err),
+            }
+            Task::none()
+        }
+        Message::SessionSearchChanged(value) => {
+            app.session_search_query = value;
             Task::none()
         }
         Message::ToggleSessionMenu(id) => {

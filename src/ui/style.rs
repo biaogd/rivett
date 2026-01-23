@@ -67,23 +67,6 @@ pub fn dialog_container(_theme: &Theme) -> container::Style {
     }
 }
 
-pub fn active_tab_header(_theme: &Theme) -> container::Style {
-    container::Style {
-        border: Border {
-            color: color_accent(),
-            width: 0.0,
-            radius: 0.0.into(),
-        },
-        ..container::Style::default()
-    }
-}
-
-pub fn inactive_tab_header(_theme: &Theme) -> container::Style {
-    container::Style {
-        ..container::Style::default()
-    }
-}
-
 pub fn error_banner(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(Color::from_rgb(1.0, 0.95, 0.95))),
@@ -93,12 +76,6 @@ pub fn error_banner(_theme: &Theme) -> container::Style {
             radius: 6.0.into(),
         },
         ..container::Style::default()
-    }
-}
-
-pub fn label_text(_theme: &Theme) -> text::Style {
-    text::Style {
-        color: Some(color_text_muted()),
     }
 }
 
@@ -539,6 +516,26 @@ pub fn search_input(
         placeholder: Color::from_rgb8(148, 163, 184),
         value: Color::BLACK,
         selection: Color::from_rgb8(14, 165, 233),
+    }
+}
+
+pub fn dialog_input(
+    _theme: &Theme,
+    _status: iced::widget::text_input::Status,
+) -> iced::widget::text_input::Style {
+    use iced::widget::text_input;
+
+    text_input::Style {
+        background: Background::Color(Color::WHITE),
+        border: Border {
+            color: Color::from_rgb8(218, 220, 224),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        icon: Color::from_rgb8(100, 116, 139),
+        placeholder: Color::from_rgb8(148, 163, 184),
+        value: Color::from_rgb8(28, 28, 30),
+        selection: color_accent(),
     }
 }
 

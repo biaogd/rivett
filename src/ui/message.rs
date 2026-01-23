@@ -18,7 +18,7 @@ pub enum Message {
     ToggleMenu,
     // Menu actions
     ShowSessionManager,
-    ShowSftp,
+    ToggleSftpPanel,
     ShowPortForwarding,
     ShowSettings,
     // Quick Connect
@@ -44,6 +44,12 @@ pub enum Message {
     SessionPortChanged(String),
     SessionUsernameChanged(String),
     SessionPasswordChanged(String),
+    TogglePasswordVisibility,
+    SessionKeyPathChanged(String),
+    SessionKeyPassphraseChanged(String),
+    SessionSearchChanged(String),
+    TestConnection,
+    TestConnectionResult(Result<(), String>),
     // SSH Connection
     SessionConnected(
         Result<
