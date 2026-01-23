@@ -24,6 +24,7 @@ pub enum Message {
     SftpDragMove(iced::Point),
     SftpLocalPathChanged(String),
     SftpRemotePathChanged(String),
+    SftpRemoteLoaded(usize, Result<Vec<crate::ui::state::SftpEntry>, String>),
     ShowPortForwarding,
     ShowSettings,
     // Quick Connect

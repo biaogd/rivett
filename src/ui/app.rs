@@ -61,6 +61,9 @@ pub struct App {
     pub(in crate::ui) sftp_remote_path: String,
     pub(in crate::ui) sftp_local_entries: Vec<SftpEntry>,
     pub(in crate::ui) sftp_local_error: Option<String>,
+    pub(in crate::ui) sftp_remote_entries: Vec<SftpEntry>,
+    pub(in crate::ui) sftp_remote_error: Option<String>,
+    pub(in crate::ui) sftp_remote_loading: bool,
 }
 
 impl App {
@@ -123,9 +126,12 @@ impl App {
                 sftp_panel_width: 520.0,
                 sftp_dragging: false,
                 sftp_local_path: "~/".to_string(),
-                sftp_remote_path: "/".to_string(),
+                sftp_remote_path: ".".to_string(),
                 sftp_local_entries: Vec::new(),
                 sftp_local_error: None,
+                sftp_remote_entries: Vec::new(),
+                sftp_remote_error: None,
+                sftp_remote_loading: false,
             },
             open_task.map(Message::WindowOpened), // Open the main window
         )

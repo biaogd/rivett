@@ -112,7 +112,11 @@ pub fn render<'a>(
                 content = content.push(row);
             }
 
-            scrollable(content).height(Length::Fill).into()
+            scrollable(content)
+                .direction(ui_style::thin_scrollbar())
+                .style(ui_style::scrollable_style)
+                .height(Length::Fill)
+                .into()
         })
         .into()
     };

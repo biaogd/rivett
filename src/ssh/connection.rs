@@ -1,16 +1,22 @@
 use russh::{ChannelId, client};
 use russh::keys::PublicKey;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 #[derive(Clone)]
 pub struct SshClient {
     tx: mpsc::UnboundedSender<Vec<u8>>,
+    shell_channel: Arc<Mutex<Option<ChannelId>>>,
 }
 
 impl SshClient {
-    pub fn new(tx: mpsc::UnboundedSender<Vec<u8>>) -> Self {
-        Self { tx }
+    pub fn new(
+        tx: mpsc::UnboundedSender<Vec<u8>>,
+        shell_channel: Arc<Mutex<Option<ChannelId>>>,
+    ) -> Self {
+        Self { tx, shell_channel }
     }
+
 }
 
 impl client::Handler for SshClient {
@@ -33,8 +39,16 @@ impl client::Handler for SshClient {
         _session: &mut client::Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         let tx = self.tx.clone();
+        let shell_channel = self.shell_channel.clone();
         let data = data.to_vec();
         async move {
+            if let Ok(guard) = shell_channel.lock() {
+                if let Some(active) = *guard {
+                    if channel != active {
+                        return Ok(());
+                    }
+                }
+            }
             println!("DEBUG: Received {} bytes on channel {:?}", data.len(), channel);
             if let Err(e) = tx.send(data) {
                 eprintln!("Failed to send SSH data to UI: {}", e);

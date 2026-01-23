@@ -4,6 +4,7 @@ use iced::widget::canvas::Cache;
 use std::sync::Arc;
 use std::sync::mpsc;
 use tokio::sync::Mutex;
+use russh_sftp::client::SftpSession;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionState {
@@ -13,7 +14,6 @@ pub enum SessionState {
     Failed(String),
 }
 
-#[derive(Debug)]
 pub struct SessionTab {
     pub title: String,
     pub chrome_cache: Cache,
@@ -33,6 +33,17 @@ pub struct SessionTab {
     pub last_redraw_time: std::time::Instant,
     pub pending_damage_full: bool,
     pub pending_damage_lines: Vec<usize>,
+    pub sftp_session: Arc<Mutex<Option<SftpSession>>>,
+}
+
+impl std::fmt::Debug for SessionTab {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionTab")
+            .field("title", &self.title)
+            .field("state", &self.state)
+            .field("is_dirty", &self.is_dirty)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,6 +81,7 @@ impl Clone for SessionTab {
             last_redraw_time: self.last_redraw_time,
             pending_damage_full: self.pending_damage_full,
             pending_damage_lines: self.pending_damage_lines.clone(),
+            sftp_session: self.sftp_session.clone(),
         }
     }
 }
@@ -124,6 +136,7 @@ impl SessionTab {
             last_redraw_time: std::time::Instant::now(),
             pending_damage_full: true,
             pending_damage_lines: Vec::new(),
+            sftp_session: Arc::new(Mutex::new(None)),
         }
     }
 

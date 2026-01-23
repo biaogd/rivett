@@ -34,6 +34,11 @@ impl App {
                             commands.push(self.focus_terminal_ime());
                         }
                     }
+                    if self.sftp_panel_open {
+                        if let Some(task) = start_remote_list(self, self.active_tab) {
+                            return task;
+                        }
+                    }
                 }
             }
             Message::CloseTab(index) => {
@@ -104,6 +109,9 @@ impl App {
                             self.sftp_local_error = Some(err);
                         }
                     }
+                    if let Some(task) = start_remote_list(self, self.active_tab) {
+                        return task;
+                    }
                 }
             }
             Message::SftpDragStart => {
@@ -135,6 +143,25 @@ impl App {
             }
             Message::SftpRemotePathChanged(path) => {
                 self.sftp_remote_path = path;
+                if let Some(task) = start_remote_list(self, self.active_tab) {
+                    return task;
+                }
+            }
+            Message::SftpRemoteLoaded(tab_index, result) => {
+                if tab_index != self.active_tab {
+                    return Task::none();
+                }
+                self.sftp_remote_loading = false;
+                match result {
+                    Ok(entries) => {
+                        self.sftp_remote_entries = entries;
+                        self.sftp_remote_error = None;
+                    }
+                    Err(err) => {
+                        self.sftp_remote_entries.clear();
+                        self.sftp_remote_error = Some(err);
+                    }
+                }
             }
             Message::ShowPortForwarding => {
                 self.show_menu = false;
@@ -515,4 +542,100 @@ fn expand_tilde(path: &str) -> String {
         }
     }
     path.to_string()
+}
+
+fn start_remote_list(app: &mut App, tab_index: usize) -> Option<Task<Message>> {
+    if tab_index == 0 || tab_index >= app.tabs.len() {
+        app.sftp_remote_entries.clear();
+        app.sftp_remote_error = Some("No active SSH session".to_string());
+        app.sftp_remote_loading = false;
+        return None;
+    }
+
+    let tab = app.tabs.get(tab_index)?;
+    let session = match &tab.session {
+        Some(session) => session.clone(),
+        None => {
+            app.sftp_remote_entries.clear();
+            app.sftp_remote_error = Some("No active SSH session".to_string());
+            app.sftp_remote_loading = false;
+            return None;
+        }
+    };
+
+    let sftp_session = tab.sftp_session.clone();
+    let path = normalize_remote_path(&app.sftp_remote_path);
+    app.sftp_remote_loading = true;
+    app.sftp_remote_error = None;
+
+    Some(Task::perform(
+        async move { load_remote_entries(session, sftp_session, path).await },
+        move |result| Message::SftpRemoteLoaded(tab_index, result),
+    ))
+}
+
+async fn load_remote_entries(
+    session: crate::core::session::Session,
+    sftp_session: Arc<Mutex<Option<russh_sftp::client::SftpSession>>>,
+    path: String,
+) -> Result<Vec<SftpEntry>, String> {
+    use chrono::TimeZone;
+
+    let dir_entries = {
+        let mut guard = sftp_session.lock().await;
+        if guard.is_none() {
+            let ssh = match session.backend.as_ref() {
+                crate::core::backend::SessionBackend::Ssh { session, .. } => session.clone(),
+                _ => return Err("No SSH session".to_string()),
+            };
+            let mut ssh_guard = ssh.lock().await;
+            let created = ssh_guard
+                .open_sftp()
+                .await
+                .map_err(|e| format!("SFTP init failed: {}", e))?;
+            *guard = Some(created);
+        }
+        let sftp = guard.as_ref().ok_or_else(|| "SFTP not available".to_string())?;
+        sftp.read_dir(path)
+            .await
+            .map_err(|e| format!("Failed to read remote dir: {}", e))?
+    };
+
+    let mut entries = Vec::new();
+    for entry in dir_entries {
+        let meta = entry.metadata();
+        let is_dir = meta.is_dir();
+        if entry.file_name().starts_with('.') {
+            continue;
+        }
+        let size = if is_dir { None } else { meta.size };
+        let modified = meta
+            .mtime
+            .and_then(|t| chrono::Local.timestamp_opt(t as i64, 0).single());
+        entries.push(SftpEntry {
+            name: entry.file_name(),
+            size,
+            modified,
+            is_dir,
+        });
+    }
+
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    Ok(entries)
+}
+
+fn normalize_remote_path(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "~" {
+        ".".to_string()
+    } else if let Some(rest) = trimmed.strip_prefix("~/") {
+        format!("./{}", rest)
+    } else {
+        trimmed.to_string()
+    }
 }

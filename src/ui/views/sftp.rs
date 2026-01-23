@@ -12,6 +12,9 @@ pub fn render<'a>(
     remote_path: &'a str,
     local_entries: &'a [SftpEntry],
     local_error: Option<&'a str>,
+    remote_entries: &'a [SftpEntry],
+    remote_error: Option<&'a str>,
+    remote_loading: bool,
 ) -> Element<'a, Message> {
     let nav_buttons = || {
         row![
@@ -39,14 +42,14 @@ pub fn render<'a>(
     let local_path_input = text_input("Local path", local_path)
         .on_input(Message::SftpLocalPathChanged)
         .padding([6, 10])
-        .size(12)
+        .size(13)
         .style(ui_style::dialog_input)
         .width(Length::Fill);
 
     let remote_path_input = text_input("Remote path", remote_path)
         .on_input(Message::SftpRemotePathChanged)
         .padding([6, 10])
-        .size(12)
+        .size(13)
         .style(ui_style::dialog_input)
         .width(Length::Fill);
 
@@ -60,11 +63,15 @@ pub fn render<'a>(
             ]
             .spacing(6),
         )
+        .direction(ui_style::thin_scrollbar())
+        .style(ui_style::scrollable_style)
         .height(Length::Fill)
     } else if local_entries.is_empty() {
         scrollable(
             column![text("No files").size(12).style(ui_style::muted_text),].spacing(6),
         )
+        .direction(ui_style::thin_scrollbar())
+        .style(ui_style::scrollable_style)
         .height(Length::Fill)
     } else {
         let mut rows = column![];
@@ -82,55 +89,101 @@ pub fn render<'a>(
             ));
         }
 
-        scrollable(rows.spacing(4)).height(Length::Fill)
+        scrollable(rows.spacing(2))
+            .direction(ui_style::thin_scrollbar())
+            .style(ui_style::scrollable_style)
+            .height(Length::Fill)
     };
 
-    let remote_list = scrollable(
-        column![
-            file_row("..".to_string(), "-".to_string(), "-".to_string(), true),
-            file_row("etc".to_string(), "-".to_string(), "Today".to_string(), true),
-            file_row("home".to_string(), "-".to_string(), "Today".to_string(), true),
-            file_row("var".to_string(), "-".to_string(), "Today".to_string(), true),
-            file_row(
-                "nginx.conf".to_string(),
-                "4 KB".to_string(),
-                "3 days".to_string(),
-                false
-            ),
-        ]
-        .spacing(4),
-    )
-    .height(Length::Fill);
+    let remote_list = if remote_loading {
+        scrollable(
+            column![text("Loading...").size(12).style(ui_style::muted_text),].spacing(6),
+        )
+        .direction(ui_style::thin_scrollbar())
+        .style(ui_style::scrollable_style)
+        .height(Length::Fill)
+    } else if let Some(error) = remote_error {
+        scrollable(
+            column![
+                text("Failed to load remote files")
+                    .size(12)
+                    .style(ui_style::muted_text),
+                text(error).size(11).style(ui_style::muted_text),
+            ]
+            .spacing(6),
+        )
+        .direction(ui_style::thin_scrollbar())
+        .style(ui_style::scrollable_style)
+        .height(Length::Fill)
+    } else if remote_entries.is_empty() {
+        scrollable(
+            column![text("No files").size(12).style(ui_style::muted_text),].spacing(6),
+        )
+        .direction(ui_style::thin_scrollbar())
+        .style(ui_style::scrollable_style)
+        .height(Length::Fill)
+    } else {
+        let mut rows = column![];
+        for entry in remote_entries {
+            let size = entry.size.map(format_size).unwrap_or_else(|| "-".to_string());
+            let modified = entry
+                .modified
+                .map(|time| time.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| "-".to_string());
+            rows = rows.push(file_row(
+                entry.name.clone(),
+                size,
+                modified,
+                entry.is_dir,
+            ));
+        }
+        scrollable(rows.spacing(2))
+            .direction(ui_style::thin_scrollbar())
+            .style(ui_style::scrollable_style)
+            .height(Length::Fill)
+    };
 
     let make_list_header = || {
         row![
-            text("Name").size(11).style(ui_style::muted_text),
+            text("Name").size(12).style(ui_style::muted_text),
             container("").width(Length::Fill),
             text("Size")
-                .size(11)
+                .size(12)
                 .style(ui_style::muted_text)
                 .width(Length::Fixed(64.0)),
             text("Modified")
-                .size(11)
+                .size(12)
                 .style(ui_style::muted_text)
                 .width(Length::Fixed(80.0)),
         ]
         .align_y(Alignment::Center)
     };
 
+    let local_list_panel = column![
+        container(make_list_header()).padding([1, 6]),
+        container("")
+            .height(1.0)
+            .width(Length::Fill)
+            .style(ui_style::divider),
+        container(local_list)
+            .padding([2, 8])
+            .width(Length::Fill)
+            .height(Length::Fill),
+    ]
+    .spacing(4)
+    .width(Length::Fill)
+    .height(Length::Fill);
+
     let local_panel = column![
         row![
-            text("Local").size(13).style(ui_style::header_text),
+            text("Local").size(14).style(ui_style::header_text),
             container("").width(Length::Fill),
             nav_buttons(),
         ]
         .align_y(Alignment::Center),
         local_path_input,
-        container(make_list_header())
-            .padding([4, 6])
-            .style(ui_style::panel),
-        container(local_list)
-            .padding(10)
+        container(local_list_panel)
+            .padding([6, 6])
             .width(Length::Fill)
             .height(Length::Fill)
             .style(ui_style::panel),
@@ -139,19 +192,31 @@ pub fn render<'a>(
     .width(Length::FillPortion(1))
     .height(Length::Fill);
 
+    let remote_list_panel = column![
+        container(make_list_header()).padding([1, 6]),
+        container("")
+            .height(1.0)
+            .width(Length::Fill)
+            .style(ui_style::divider),
+        container(remote_list)
+            .padding([2, 8])
+            .width(Length::Fill)
+            .height(Length::Fill),
+    ]
+    .spacing(4)
+    .width(Length::Fill)
+    .height(Length::Fill);
+
     let remote_panel = column![
         row![
-            text("Remote").size(13).style(ui_style::header_text),
+            text("Remote").size(14).style(ui_style::header_text),
             container("").width(Length::Fill),
             nav_buttons(),
         ]
         .align_y(Alignment::Center),
         remote_path_input,
-        container(make_list_header())
-            .padding([4, 6])
-            .style(ui_style::panel),
-        container(remote_list)
-            .padding(10)
+        container(remote_list_panel)
+            .padding([6, 6])
             .width(Length::Fill)
             .height(Length::Fill)
             .style(ui_style::panel),
@@ -183,9 +248,11 @@ pub fn render<'a>(
 
     column![
         row![
-            text("SFTP").size(14).style(ui_style::header_text),
+            text("SFTP").size(15).style(ui_style::header_text),
             container("").width(Length::Fill),
-            text("Disconnected").size(12).style(ui_style::muted_text),
+            text(if remote_loading { "Loading" } else { "Disconnected" })
+                .size(12)
+                .style(ui_style::muted_text),
         ]
         .align_y(Alignment::Center),
         panels,
@@ -228,20 +295,20 @@ fn file_row(
 
     button(
         row![
-            text(name).size(12).style(name_style),
+            text(name).size(13).style(name_style),
             container("").width(Length::Fill),
             text(size)
-                .size(11)
+                .size(12)
                 .style(ui_style::muted_text)
                 .width(Length::Fixed(64.0)),
             text(modified)
-                .size(11)
+                .size(12)
                 .style(ui_style::muted_text)
                 .width(Length::Fixed(80.0)),
         ]
         .align_y(Alignment::Center),
     )
-    .padding([4, 6])
+    .padding([2, 6])
     .width(Length::Fill)
     .style(ui_style::menu_item_button)
     .on_press(Message::Ignore)

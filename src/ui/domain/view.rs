@@ -119,6 +119,9 @@ impl App {
                 &self.sftp_remote_path,
                 &self.sftp_local_entries,
                 self.sftp_local_error.as_deref(),
+                &self.sftp_remote_entries,
+                self.sftp_remote_error.as_deref(),
+                self.sftp_remote_loading,
             ))
             .padding(12)
             .width(Length::Fill)

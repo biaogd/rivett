@@ -123,6 +123,8 @@ pub fn render<'a>(
             Space::new().height(24.0),
             local_section
         ])
+        .direction(ui_style::thin_scrollbar())
+        .style(ui_style::scrollable_style)
         .height(Length::Fill),
         Space::new().height(16.0),
         footer

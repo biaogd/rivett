@@ -1,5 +1,6 @@
 use iced::widget::{button, container, text};
 use iced::{Background, Border, Color, Shadow, Theme, Vector};
+use iced::widget::scrollable;
 
 // === Modern Dark Theme Color Palette ===
 
@@ -519,6 +520,72 @@ pub fn quick_connect_footer_hint(_theme: &Theme) -> text::Style {
     text::Style {
         color: Some(Color::from_rgb8(148, 163, 184)), // slate-400
     }
+}
+
+pub fn scrollable_style(
+    _theme: &Theme,
+    status: iced::widget::scrollable::Status,
+) -> iced::widget::scrollable::Style {
+    use iced::widget::scrollable::{Rail, Scroller, Status, Style};
+
+    let (alpha, border_alpha, disabled) = match status {
+        Status::Dragged { .. } => (0.75, 0.5, false),
+        Status::Hovered {
+            is_vertical_scrollbar_disabled,
+            is_horizontal_scrollbar_disabled,
+            ..
+        } => (0.55, 0.35, is_vertical_scrollbar_disabled && is_horizontal_scrollbar_disabled),
+        Status::Active {
+            is_vertical_scrollbar_disabled,
+            is_horizontal_scrollbar_disabled,
+        } => (0.0, 0.0, is_vertical_scrollbar_disabled && is_horizontal_scrollbar_disabled),
+    };
+
+    let scroller_color = if disabled || alpha == 0.0 {
+        Color::TRANSPARENT
+    } else {
+        Color::from_rgba8(120, 120, 125, alpha)
+    };
+    let scroller_border = if disabled || border_alpha == 0.0 {
+        Color::TRANSPARENT
+    } else {
+        Color::from_rgba8(120, 120, 125, border_alpha)
+    };
+
+    let rail = Rail {
+        background: None,
+        border: iced::border::rounded(0),
+        scroller: Scroller {
+            background: Background::Color(scroller_color),
+            border: iced::border::rounded(6).color(scroller_border),
+        },
+    };
+
+    Style {
+        container: container::Style::default(),
+        vertical_rail: rail,
+        horizontal_rail: rail,
+        gap: None,
+        auto_scroll: iced::widget::scrollable::AutoScroll {
+            background: Background::Color(Color::from_rgba8(0, 0, 0, 0.05)),
+            border: iced::border::rounded(999),
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.2),
+                offset: Vector::new(0.0, 1.0),
+                blur_radius: 2.0,
+            },
+            icon: Color::from_rgba8(80, 80, 85, 0.7),
+        },
+    }
+}
+
+pub fn thin_scrollbar() -> scrollable::Direction {
+    scrollable::Direction::Vertical(
+        scrollable::Scrollbar::new()
+            .width(6)
+            .scroller_width(6)
+            .margin(2),
+    )
 }
 
 pub fn search_input(

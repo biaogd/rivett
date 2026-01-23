@@ -2,7 +2,9 @@ use anyhow::Result;
 use dirs::home_dir;
 use russh::{ChannelId, client};
 use russh::keys::{load_secret_key, PrivateKey, PrivateKeyWithHashAlg};
+use russh_sftp::client::SftpSession;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use tokio::sync::mpsc;
 
 use super::connection::SshClient;
@@ -14,6 +16,7 @@ pub struct SshSession {
     #[allow(dead_code)]
     session: client::Handle<SshClient>,
     active_channel: Option<russh::Channel<client::Msg>>,
+    shell_channel: Arc<StdMutex<Option<ChannelId>>>,
 }
 
 const CONNECT_TIMEOUT_SECS: u64 = 10;
@@ -47,7 +50,8 @@ impl SshSession {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // Create the handler
-        let sh = SshClient::new(tx);
+        let shell_channel = Arc::new(StdMutex::new(None));
+        let sh = SshClient::new(tx, shell_channel.clone());
 
         let addr = format!("{}:{}", host, port);
         let timeout = std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS);
@@ -86,13 +90,14 @@ impl SshSession {
             }
         }
 
-            Ok((
-                Self {
-                    session,
-                    active_channel: None,
-                },
-                rx,
-            ))
+        Ok((
+            Self {
+                session,
+                active_channel: None,
+                shell_channel,
+            },
+            rx,
+        ))
         })
         .await;
 
@@ -135,7 +140,17 @@ impl SshSession {
         channel.request_shell(true).await?;
         let id = channel.id();
         self.active_channel = Some(channel);
+        if let Ok(mut guard) = self.shell_channel.lock() {
+            *guard = Some(id);
+        }
         Ok(id)
+    }
+
+    pub async fn open_sftp(&mut self) -> Result<SftpSession> {
+        let channel = self.session.channel_open_session().await?;
+        channel.request_subsystem(true, "sftp").await?;
+        let sftp = SftpSession::new(channel.into_stream()).await?;
+        Ok(sftp)
     }
 
     pub async fn write_data(&mut self, channel_id: ChannelId, data: &[u8]) -> Result<()> {
