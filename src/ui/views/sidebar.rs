@@ -32,7 +32,7 @@ pub fn render<'a>(active_view: ActiveView) -> Element<'a, Message> {
     })
     .on_press(Message::ShowSessionManager);
 
-    // SFTP button (would be highlighted when in SFTP view)
+    // SFTP button (toggle panel)
     let sftp_btn = button(
         row![dir_svg, text("SFTP").size(13),]
             .spacing(10)
@@ -41,7 +41,7 @@ pub fn render<'a>(active_view: ActiveView) -> Element<'a, Message> {
     .width(Length::Fill)
     .padding([8, 12])
     .style(ui_style::sidebar_button_inactive) // Always inactive for now
-    .on_press(Message::Ignore); // Not implemented yet
+    .on_press(Message::ToggleSftpPanel);
 
     // RECENT section header
     let recent_header = container(

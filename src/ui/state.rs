@@ -43,6 +43,14 @@ pub enum ConnectionTestStatus {
     Failed(String),
 }
 
+#[derive(Debug, Clone)]
+pub struct SftpEntry {
+    pub name: String,
+    pub size: Option<u64>,
+    pub modified: Option<chrono::DateTime<chrono::Local>>,
+    pub is_dir: bool,
+}
+
 impl Clone for SessionTab {
     fn clone(&self) -> Self {
         Self {

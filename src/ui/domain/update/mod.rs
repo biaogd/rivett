@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 
 use crate::core::session::Session;
 use crate::ui::message::{ActiveView, Message};
-use crate::ui::state::SessionState;
+use crate::ui::state::{SessionState, SftpEntry};
 use crate::ui::App;
 
 impl App {
@@ -85,9 +85,56 @@ impl App {
                 self.editing_session = None;
                 self.active_tab = 0;
             }
-            Message::ShowSftp => {
-                self.show_menu = false;
-                // TODO: Show SFTP interface
+            Message::ToggleSftpPanel => {
+                self.sftp_panel_open = !self.sftp_panel_open;
+                self.sftp_dragging = false;
+                if self.sftp_panel_open {
+                    if self.window_width > 0 {
+                        self.sftp_panel_width =
+                            (self.window_width as f32 * 0.45).clamp(420.0, 720.0);
+                    }
+                    let result = load_local_entries(&self.sftp_local_path);
+                    match result {
+                        Ok(entries) => {
+                            self.sftp_local_entries = entries;
+                            self.sftp_local_error = None;
+                        }
+                        Err(err) => {
+                            self.sftp_local_entries.clear();
+                            self.sftp_local_error = Some(err);
+                        }
+                    }
+                }
+            }
+            Message::SftpDragStart => {
+                self.sftp_dragging = true;
+            }
+            Message::SftpDragEnd => {
+                self.sftp_dragging = false;
+            }
+            Message::SftpDragMove(point) => {
+                if self.sftp_dragging && self.window_width > 0 {
+                    let max_width = (self.window_width as f32 - 240.0).max(320.0);
+                    let width = (self.window_width as f32 - point.x).clamp(280.0, max_width);
+                    self.sftp_panel_width = width;
+                }
+            }
+            Message::SftpLocalPathChanged(path) => {
+                self.sftp_local_path = path;
+                let result = load_local_entries(&self.sftp_local_path);
+                match result {
+                    Ok(entries) => {
+                        self.sftp_local_entries = entries;
+                        self.sftp_local_error = None;
+                    }
+                    Err(err) => {
+                        self.sftp_local_entries.clear();
+                        self.sftp_local_error = Some(err);
+                    }
+                }
+            }
+            Message::SftpRemotePathChanged(path) => {
+                self.sftp_remote_path = path;
             }
             Message::ShowPortForwarding => {
                 self.show_menu = false;
@@ -410,4 +457,62 @@ impl App {
         Task::batch(commands)
     }
 
+}
+
+fn load_local_entries(path: &str) -> Result<Vec<SftpEntry>, String> {
+    let expanded = expand_tilde(path);
+    let target = if expanded.trim().is_empty() {
+        expand_tilde("~")
+    } else {
+        expanded
+    };
+
+    let dir = std::fs::read_dir(&target)
+        .map_err(|e| format!("Failed to read {}: {}", target, e))?;
+
+    let mut entries = Vec::new();
+    for entry in dir {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let meta = entry
+            .metadata()
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let is_dir = meta.is_dir();
+        let size = if is_dir { None } else { Some(meta.len()) };
+        let modified = meta
+            .modified()
+            .ok()
+            .map(|time| chrono::DateTime::<chrono::Local>::from(time));
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+
+        entries.push(SftpEntry {
+            name,
+            size,
+            modified,
+            is_dir,
+        });
+    }
+
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    Ok(entries)
+}
+
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~/") || path == "~" {
+        if let Some(home) = dirs::home_dir() {
+            let rest = path.trim_start_matches("~/").trim_start_matches('~');
+            if rest.is_empty() {
+                return home.to_string_lossy().to_string();
+            }
+            return home.join(rest).to_string_lossy().to_string();
+        }
+    }
+    path.to_string()
 }

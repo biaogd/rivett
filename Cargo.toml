@@ -16,8 +16,9 @@ parking_lot = "0.12"
 portable-pty = "0.8"
 
 # SSH connection
-russh = "0.44"
-russh-keys = "0.44"
+russh = { version = "0.56.0", default-features = false, features = ["flate2", "aws-lc-rs"] }
+russh-keys = "0.49.2"
+russh-sftp = "2.1.1"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

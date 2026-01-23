@@ -5,7 +5,7 @@ use crate::platform::PlatformServices;
 use crate::settings::{AppSettings, SettingsStorage};
 use crate::session::{SessionConfig, SessionStorage};
 use super::message::{ActiveView, Message};
-use super::state::{ConnectionTestStatus, SessionTab};
+use super::state::{ConnectionTestStatus, SessionTab, SftpEntry};
 
 #[derive(Debug)]
 pub struct App {
@@ -54,6 +54,13 @@ pub struct App {
     pub(in crate::ui) ime_ignore_next_input: bool,
     pub(in crate::ui) pending_resize: Option<(usize, usize, std::time::Instant)>,
     pub(in crate::ui) last_terminal_tab: usize,
+    pub(in crate::ui) sftp_panel_open: bool,
+    pub(in crate::ui) sftp_panel_width: f32,
+    pub(in crate::ui) sftp_dragging: bool,
+    pub(in crate::ui) sftp_local_path: String,
+    pub(in crate::ui) sftp_remote_path: String,
+    pub(in crate::ui) sftp_local_entries: Vec<SftpEntry>,
+    pub(in crate::ui) sftp_local_error: Option<String>,
 }
 
 impl App {
@@ -112,6 +119,13 @@ impl App {
                 ime_ignore_next_input: false,
                 pending_resize: None,
                 last_terminal_tab: 0,
+                sftp_panel_open: false,
+                sftp_panel_width: 520.0,
+                sftp_dragging: false,
+                sftp_local_path: "~/".to_string(),
+                sftp_remote_path: "/".to_string(),
+                sftp_local_entries: Vec::new(),
+                sftp_local_error: None,
             },
             open_task.map(Message::WindowOpened), // Open the main window
         )

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dirs::home_dir;
 use russh::{ChannelId, client};
-use russh_keys::key::KeyPair;
+use russh::keys::{load_secret_key, PrivateKey, PrivateKeyWithHashAlg};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -60,23 +60,31 @@ impl SshSession {
                     if password.trim().is_empty() {
                         return Err(anyhow::anyhow!("Password required for authentication"));
                     }
-                    let auth_res = session.authenticate_password(username, password).await?;
-                    if !auth_res {
-                        return Err(anyhow::anyhow!("Authentication failed"));
-                    }
-                }
-                AuthMethod::PrivateKey { path } => {
-                    let expanded = Self::expand_tilde(&path);
-                    let key: KeyPair =
-                        russh_keys::load_secret_key(&expanded, key_passphrase.as_deref())?;
-                    let auth_res = session
-                        .authenticate_publickey(username, Arc::new(key))
-                        .await?;
-                    if !auth_res {
-                        return Err(anyhow::anyhow!("Authentication failed"));
-                    }
+                let auth_res = session.authenticate_password(username, password).await?;
+                if !auth_res.success() {
+                    return Err(anyhow::anyhow!("Authentication failed"));
                 }
             }
+            AuthMethod::PrivateKey { path } => {
+                let expanded = Self::expand_tilde(&path);
+                let key: PrivateKey = load_secret_key(&expanded, key_passphrase.as_deref())?;
+                let hash_alg = if key.algorithm().is_rsa() {
+                    session
+                        .best_supported_rsa_hash()
+                        .await?
+                        .flatten()
+                } else {
+                    None
+                };
+                let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
+                let auth_res = session
+                    .authenticate_publickey(username, key_with_alg)
+                    .await?;
+                if !auth_res.success() {
+                    return Err(anyhow::anyhow!("Authentication failed"));
+                }
+            }
+        }
 
             Ok((
                 Self {
@@ -116,7 +124,7 @@ impl SshSession {
             .session
             .authenticate_password(username, password)
             .await?;
-        Ok(result)
+        Ok(result.success())
     }
 
     pub async fn open_shell(&mut self) -> Result<ChannelId> {

@@ -1,4 +1,4 @@
-use iced::{Element, Length};
+use iced::{Alignment, Element, Length};
 
 use crate::ui::message::{ActiveView, Message};
 use crate::ui::{components, views};
@@ -82,6 +82,7 @@ impl App {
             self.active_tab,
             self.active_view,
             self.show_menu,
+            self.sftp_panel_open,
         ));
 
         let base_container = container(main_layout.spacing(0).height(Length::Fill))
@@ -89,7 +90,7 @@ impl App {
             .height(Length::Fill)
             .style(ui_style::app_background);
 
-        let main_view: Element<'_, Message> = if self.show_menu {
+        let content_view: Element<'_, Message> = if self.show_menu {
             let left_menu = container(views::sidebar::render(self.active_view))
                 .width(Length::Fixed(200.0))
                 .height(Length::Fill)
@@ -102,6 +103,61 @@ impl App {
                 .into()
         } else {
             base_container.into()
+        };
+
+        let main_view: Element<'_, Message> = if self.sftp_panel_open {
+            let handle = iced::widget::mouse_area(
+                container(Space::new())
+                    .width(Length::Fixed(10.0))
+                    .height(Length::Fill),
+            )
+            .interaction(iced::mouse::Interaction::ResizingHorizontally)
+            .on_press(Message::SftpDragStart);
+
+            let sftp_content = container(views::sftp::render(
+                &self.sftp_local_path,
+                &self.sftp_remote_path,
+                &self.sftp_local_entries,
+                self.sftp_local_error.as_deref(),
+            ))
+            .padding(12)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+            let sftp_panel = container(
+                row![handle, sftp_content]
+                    .spacing(0)
+                    .align_y(Alignment::Center),
+            )
+            .width(Length::Fixed(self.sftp_panel_width))
+            .height(Length::Fill)
+            .style(ui_style::drawer_panel);
+
+            let backdrop = button(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(ui_style::modal_backdrop)
+            .on_press(Message::ToggleSftpPanel);
+
+            let overlay = container(
+                iced::widget::mouse_area(sftp_panel).on_press(Message::Ignore),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::End);
+
+            let layered = stack![content_view, backdrop, overlay];
+
+            iced::widget::mouse_area(layered)
+                .on_move(Message::SftpDragMove)
+                .on_release(Message::SftpDragEnd)
+                .into()
+        } else {
+            content_view
         };
 
         // Quick Connect overlay

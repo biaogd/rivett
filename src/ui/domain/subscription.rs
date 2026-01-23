@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::ui::message::{ActiveView, Message};
+use crate::ui::message::Message;
 use crate::ui::state::SessionState;
 use crate::ui::App;
 
@@ -14,19 +14,17 @@ impl App {
         // Add Tick subscription for render throttling (approx 60 FPS check rate)
         subs.push(iced::time::every(std::time::Duration::from_millis(16)).map(Message::Tick));
 
-        if self.active_view == ActiveView::Terminal && !self.show_quick_connect {
-            if let Some(main_window) = self.main_window {
-                let events = event::listen_with(|event, _status, id| Some((id, event)))
-                    .with(main_window)
-                    .filter_map(|(target, (id, event))| {
-                        if id == target {
-                            Some(Message::RuntimeEvent(event, id))
-                        } else {
-                            None
-                        }
-                    });
-                subs.push(events);
-            }
+        if let Some(main_window) = self.main_window {
+            let events = event::listen_with(|event, _status, id| Some((id, event)))
+                .with(main_window)
+                .filter_map(|(target, (id, event))| {
+                    if id == target {
+                        Some(Message::RuntimeEvent(event, id))
+                    } else {
+                        None
+                    }
+                });
+            subs.push(events);
         }
 
         subs.push(iced::window::close_events().map(Message::WindowClosed));

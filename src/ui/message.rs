@@ -19,6 +19,11 @@ pub enum Message {
     // Menu actions
     ShowSessionManager,
     ToggleSftpPanel,
+    SftpDragStart,
+    SftpDragEnd,
+    SftpDragMove(iced::Point),
+    SftpLocalPathChanged(String),
+    SftpRemotePathChanged(String),
     ShowPortForwarding,
     ShowSettings,
     // Quick Connect

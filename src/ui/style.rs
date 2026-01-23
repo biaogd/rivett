@@ -143,6 +143,28 @@ pub fn panel(_theme: &Theme) -> container::Style {
     }
 }
 
+pub fn drawer_panel(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(color_panel())),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: iced::border::Radius {
+                top_left: 0.0,
+                top_right: 0.0,
+                bottom_right: 12.0,
+                bottom_left: 0.0,
+            },
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.06),
+            offset: Vector::new(0.0, 2.0),
+            blur_radius: 10.0,
+        },
+        ..container::Style::default()
+    }
+}
+
 pub fn muted_text(_theme: &Theme) -> text::Style {
     text::Style {
         color: Some(color_text_muted()),

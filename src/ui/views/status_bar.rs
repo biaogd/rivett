@@ -9,6 +9,7 @@ pub fn render<'a>(
     active_tab: usize,
     active_view: ActiveView,
     show_menu: bool,
+    sftp_panel_open: bool,
 ) -> Element<'a, Message> {
     let current_tab = tabs.get(active_tab);
     let status_left = if let Some(tab) = current_tab {
@@ -39,6 +40,10 @@ pub fn render<'a>(
         menu_button,
         text(status_left).size(12),
         container("").width(Length::Fill),
+        button(text("SFTP").size(12))
+            .padding([4, 10])
+            .style(ui_style::menu_button(sftp_panel_open))
+            .on_press(Message::ToggleSftpPanel),
         text("UTF-8").size(12).style(ui_style::muted_text),
         text("│").size(12).style(ui_style::muted_text),
         text("24x120").size(12).style(ui_style::muted_text),

@@ -8,6 +8,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Mess
         Message::WindowResized(width, height) => {
             app.window_width = width;
             app.window_height = height;
+            app.sftp_dragging = false;
 
             let sidebar_width = if app.show_menu { 200.0 } else { 0.0 };
             let h_padding = 24.0;
@@ -19,6 +20,10 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Mess
             let cols = (term_w / app.cell_width()) as usize;
             let rows = (term_h / app.cell_height()) as usize;
 
+            if width > 0 {
+                app.sftp_panel_width =
+                    (width as f32 * 0.45).clamp(420.0, 720.0);
+            }
             app.pending_resize = Some((cols, rows, std::time::Instant::now()));
             Some(Task::done(Message::TerminalResize(cols, rows)))
         }
