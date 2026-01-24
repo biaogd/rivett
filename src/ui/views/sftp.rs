@@ -533,7 +533,10 @@ fn transfer_row(
 
     let status_icon = match &transfer.status {
         SftpTransferStatus::Queued => icon_svg(QUEUED_SVG),
-        SftpTransferStatus::Uploading => icon_svg(UPLOADING_SVG),
+        SftpTransferStatus::Uploading => match transfer.direction {
+            SftpTransferDirection::Upload => icon_svg(UPLOADING_SVG),
+            SftpTransferDirection::Download => icon_svg(DOWNLOADING_SVG),
+        },
         SftpTransferStatus::Paused => icon_svg(PAUSED_SVG),
         SftpTransferStatus::Completed => icon_svg(CHECK_SVG),
         SftpTransferStatus::Failed(_) => icon_svg(ERROR_SVG),
@@ -702,6 +705,7 @@ const EXEC_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill
 const CHECK_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#34C759" stroke-width="2.0"/><path d="M8.2 12.2l2.4 2.5 5.2-5.4" stroke="#34C759" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/></svg>"###;
 const ERROR_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#FF453A" stroke-width="2.0"/><path d="M12 7.2v6.4" stroke="#FF453A" stroke-width="2.0" stroke-linecap="round"/><circle cx="12" cy="16.8" r="1.2" fill="#FF453A"/></svg>"###;
 const UPLOADING_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#0A84FF" stroke-width="2.0"/><path d="M12 7.5v9" stroke="#0A84FF" stroke-width="2.0" stroke-linecap="round"/><path d="M9 10.5L12 7.5l3 3" stroke="#0A84FF" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/></svg>"###;
+const DOWNLOADING_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#0A84FF" stroke-width="2.0"/><path d="M12 7.5v9" stroke="#0A84FF" stroke-width="2.0" stroke-linecap="round"/><path d="M15 13.5l-3 3-3-3" stroke="#0A84FF" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/></svg>"###;
 const QUEUED_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#8E8E93" stroke-width="2.0"/><path d="M12 7.5v5.3l3.8 2.2" stroke="#8E8E93" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/></svg>"###;
 const CANCEL_STATUS_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#FF9F0A" stroke-width="2.0"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7" stroke="#FF9F0A" stroke-width="2.0" stroke-linecap="round"/></svg>"###;
 const CANCEL_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7l-10 10" stroke="#FF453A" stroke-width="2.0" stroke-linecap="round"/></svg>"###;
