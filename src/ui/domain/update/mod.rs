@@ -6,6 +6,7 @@ mod window;
 use iced::Task;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use tokio::sync::Mutex;
 
@@ -52,6 +53,13 @@ impl App {
                 }
                 if index < self.tabs.len() {
                     self.tabs.remove(index);
+                    let mut active_keys = HashSet::new();
+                    for tab in &self.tabs {
+                        if let Some(key) = &tab.sftp_key {
+                            active_keys.insert(key.clone());
+                        }
+                    }
+                    self.sftp_states.retain(|key, _| active_keys.contains(key));
                     if self.active_tab >= self.tabs.len() && self.active_tab > 0 {
                         self.active_tab -= 1;
                     }
@@ -98,26 +106,37 @@ impl App {
             Message::ToggleSftpPanel => {
                 self.sftp_panel_open = !self.sftp_panel_open;
                 self.sftp_dragging = false;
-                self.sftp_local_selected = None;
-                self.sftp_remote_selected = None;
-                self.sftp_local_last_click = None;
-                self.sftp_remote_last_click = None;
-                self.sftp_context_menu = None;
-                self.sftp_panel_cursor = None;
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.local_selected = None;
+                    state.remote_selected = None;
+                    state.local_last_click = None;
+                    state.remote_last_click = None;
+                    state.context_menu = None;
+                    state.panel_cursor = None;
+                }
                 if self.sftp_panel_open {
                     if self.window_width > 0 {
-                        self.sftp_panel_width =
-                            (self.window_width as f32 * 0.45).clamp(420.0, 720.0);
-                    }
-                    let result = load_local_entries(&self.sftp_local_path);
-                    match result {
-                        Ok(entries) => {
-                            self.sftp_local_entries = entries;
-                            self.sftp_local_error = None;
+                        let max_width = (self.window_width as f32 - 240.0).max(320.0);
+                        if !self.sftp_panel_initialized {
+                            self.sftp_panel_width =
+                                (self.window_width as f32 * 0.45).clamp(420.0, 720.0);
+                            self.sftp_panel_initialized = true;
+                        } else {
+                            self.sftp_panel_width =
+                                self.sftp_panel_width.clamp(280.0, max_width);
                         }
-                        Err(err) => {
-                            self.sftp_local_entries.clear();
-                            self.sftp_local_error = Some(err);
+                    }
+                    if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                        let result = load_local_entries(&state.local_path);
+                        match result {
+                            Ok(entries) => {
+                                state.local_entries = entries;
+                                state.local_error = None;
+                            }
+                            Err(err) => {
+                                state.local_entries.clear();
+                                state.local_error = Some(err);
+                            }
                         }
                     }
                     if let Some(task) = start_remote_list(self, self.active_tab) {
@@ -139,61 +158,69 @@ impl App {
                 }
             }
             Message::SftpLocalPathChanged(path) => {
-                self.sftp_local_path = path;
-                self.sftp_local_selected = None;
-                self.sftp_local_last_click = None;
-                self.sftp_context_menu = None;
-                let result = load_local_entries(&self.sftp_local_path);
-                match result {
-                    Ok(entries) => {
-                        self.sftp_local_entries = entries;
-                        self.sftp_local_error = None;
-                    }
-                    Err(err) => {
-                        self.sftp_local_entries.clear();
-                        self.sftp_local_error = Some(err);
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.local_path = path;
+                    state.local_selected = None;
+                    state.local_last_click = None;
+                    state.context_menu = None;
+                    let result = load_local_entries(&state.local_path);
+                    match result {
+                        Ok(entries) => {
+                            state.local_entries = entries;
+                            state.local_error = None;
+                        }
+                        Err(err) => {
+                            state.local_entries.clear();
+                            state.local_error = Some(err);
+                        }
                     }
                 }
             }
             Message::SftpRemotePathChanged(path) => {
-                self.sftp_remote_path = path;
-                self.sftp_remote_selected = None;
-                self.sftp_remote_last_click = None;
-                self.sftp_context_menu = None;
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.remote_path = path;
+                    state.remote_selected = None;
+                    state.remote_last_click = None;
+                    state.context_menu = None;
+                }
                 if let Some(task) = start_remote_list(self, self.active_tab) {
                     return task;
                 }
             }
             Message::SftpRemoteLoaded(tab_index, result) => {
-                if tab_index != self.active_tab {
-                    return Task::none();
-                }
-                self.sftp_remote_loading = false;
-                match result {
-                    Ok((entries, resolved_path)) => {
-                        self.sftp_remote_entries = entries;
-                        self.sftp_remote_error = None;
-                        if let Some(path) = resolved_path {
-                            self.sftp_remote_path = path;
+                if let Some(state) = self.sftp_state_for_tab_mut(tab_index) {
+                    state.remote_loading = false;
+                    match result {
+                        Ok((entries, resolved_path)) => {
+                            state.remote_entries = entries;
+                            state.remote_error = None;
+                            if let Some(path) = resolved_path {
+                                state.remote_path = path;
+                            }
                         }
-                    }
-                    Err(err) => {
-                        self.sftp_remote_entries.clear();
-                        self.sftp_remote_error = Some(err);
+                        Err(err) => {
+                            state.remote_entries.clear();
+                            state.remote_error = Some(err);
+                        }
                     }
                 }
             }
             Message::SftpPanelCursorMoved(point) => {
-                self.sftp_panel_cursor = Some(point);
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.panel_cursor = Some(point);
+                }
             }
             Message::SftpLocalEntryPressed(name, is_dir) => {
-                if self.sftp_rename_target.is_some() {
-                    self.sftp_rename_target = None;
-                    self.sftp_rename_value.clear();
+                let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) else {
+                    return Task::none();
+                };
+                if state.rename_target.is_some() {
+                    state.rename_target = None;
+                    state.rename_value.clear();
                 }
                 let now = Instant::now();
-                let is_double = self
-                    .sftp_local_last_click
+                let is_double = state
+                    .local_last_click
                     .as_ref()
                     .map(|(last_name, last_time)| {
                         last_name == &name
@@ -201,36 +228,39 @@ impl App {
                     })
                     .unwrap_or(false);
 
-                self.sftp_local_selected = Some(name.clone());
-                self.sftp_local_last_click = Some((name.clone(), now));
-                self.sftp_context_menu = None;
+                state.local_selected = Some(name.clone());
+                state.local_last_click = Some((name.clone(), now));
+                state.context_menu = None;
 
                 if is_double && is_dir {
-                    let new_path = join_local_path(&self.sftp_local_path, &name);
-                    self.sftp_local_path = new_path;
-                    self.sftp_local_selected = None;
-                    self.sftp_local_last_click = None;
-                    let result = load_local_entries(&self.sftp_local_path);
+                    let new_path = join_local_path(&state.local_path, &name);
+                    state.local_path = new_path;
+                    state.local_selected = None;
+                    state.local_last_click = None;
+                    let result = load_local_entries(&state.local_path);
                     match result {
                         Ok(entries) => {
-                            self.sftp_local_entries = entries;
-                            self.sftp_local_error = None;
+                            state.local_entries = entries;
+                            state.local_error = None;
                         }
                         Err(err) => {
-                            self.sftp_local_entries.clear();
-                            self.sftp_local_error = Some(err);
+                            state.local_entries.clear();
+                            state.local_error = Some(err);
                         }
                     }
                 }
             }
             Message::SftpRemoteEntryPressed(name, is_dir) => {
-                if self.sftp_rename_target.is_some() {
-                    self.sftp_rename_target = None;
-                    self.sftp_rename_value.clear();
+                let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) else {
+                    return Task::none();
+                };
+                if state.rename_target.is_some() {
+                    state.rename_target = None;
+                    state.rename_value.clear();
                 }
                 let now = Instant::now();
-                let is_double = self
-                    .sftp_remote_last_click
+                let is_double = state
+                    .remote_last_click
                     .as_ref()
                     .map(|(last_name, last_time)| {
                         last_name == &name
@@ -238,44 +268,54 @@ impl App {
                     })
                     .unwrap_or(false);
 
-                self.sftp_remote_selected = Some(name.clone());
-                self.sftp_remote_last_click = Some((name.clone(), now));
-                self.sftp_context_menu = None;
+                state.remote_selected = Some(name.clone());
+                state.remote_last_click = Some((name.clone(), now));
+                state.context_menu = None;
 
                 if is_double && is_dir {
-                    self.sftp_remote_path = join_remote_path(&self.sftp_remote_path, &name);
-                    self.sftp_remote_selected = None;
-                    self.sftp_remote_last_click = None;
+                    state.remote_path = join_remote_path(&state.remote_path, &name);
+                    state.remote_selected = None;
+                    state.remote_last_click = None;
                     if let Some(task) = start_remote_list(self, self.active_tab) {
                         return task;
                     }
                 }
             }
             Message::SftpOpenContextMenu(pane, name) => {
-                let position = self.sftp_panel_cursor.unwrap_or(iced::Point::new(16.0, 16.0));
+                let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) else {
+                    return Task::none();
+                };
+                let position = state
+                    .panel_cursor
+                    .unwrap_or(iced::Point::new(16.0, 16.0));
                 match pane {
                     SftpPane::Local => {
-                        self.sftp_local_selected = Some(name.clone());
+                        state.local_selected = Some(name.clone());
                     }
                     SftpPane::Remote => {
-                        self.sftp_remote_selected = Some(name.clone());
+                        state.remote_selected = Some(name.clone());
                     }
                 }
-                self.sftp_context_menu = Some(SftpContextMenu {
+                state.context_menu = Some(SftpContextMenu {
                     pane,
                     name,
                     position,
                 });
             }
             Message::SftpCloseContextMenu => {
-                self.sftp_context_menu = None;
-                if self.sftp_rename_target.is_some() {
-                    self.sftp_rename_target = None;
-                    self.sftp_rename_value.clear();
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.context_menu = None;
+                    if state.rename_target.is_some() {
+                        state.rename_target = None;
+                        state.rename_value.clear();
+                    }
                 }
             }
             Message::SftpContextAction(pane, name, action) => {
-                self.sftp_context_menu = None;
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.context_menu = None;
+                }
+
                 if pane == SftpPane::Local && action == SftpContextAction::Upload {
                     if let Some(task) = start_upload(self, name.clone()) {
                         return task;
@@ -289,149 +329,186 @@ impl App {
                 if action == SftpContextAction::Rename {
                     let is_dir = match pane {
                         SftpPane::Local => self
-                            .sftp_local_entries
-                            .iter()
-                            .find(|entry| entry.name == name)
-                            .map(|entry| entry.is_dir)
+                            .sftp_state_for_tab(self.active_tab)
+                            .and_then(|state| {
+                                state
+                                    .local_entries
+                                    .iter()
+                                    .find(|entry| entry.name == name)
+                                    .map(|entry| entry.is_dir)
+                            })
                             .unwrap_or(false),
                         SftpPane::Remote => self
-                            .sftp_remote_entries
-                            .iter()
-                            .find(|entry| entry.name == name)
-                            .map(|entry| entry.is_dir)
+                            .sftp_state_for_tab(self.active_tab)
+                            .and_then(|state| {
+                                state
+                                    .remote_entries
+                                    .iter()
+                                    .find(|entry| entry.name == name)
+                                    .map(|entry| entry.is_dir)
+                            })
                             .unwrap_or(false),
                     };
-                    self.sftp_rename_target = Some(crate::ui::state::SftpPendingAction {
-                        pane,
-                        name: name.clone(),
-                        is_dir,
-                    });
-                    self.sftp_rename_value = name.clone();
+                    if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                        state.rename_target = Some(crate::ui::state::SftpPendingAction {
+                            pane,
+                            name: name.clone(),
+                            is_dir,
+                        });
+                        state.rename_value = name.clone();
+                    }
                     return iced::widget::operation::focus(self.sftp_rename_input_id.clone());
                 }
                 if action == SftpContextAction::Delete {
                     let is_dir = match pane {
                         SftpPane::Local => self
-                            .sftp_local_entries
-                            .iter()
-                            .find(|entry| entry.name == name)
-                            .map(|entry| entry.is_dir)
+                            .sftp_state_for_tab(self.active_tab)
+                            .and_then(|state| {
+                                state
+                                    .local_entries
+                                    .iter()
+                                    .find(|entry| entry.name == name)
+                                    .map(|entry| entry.is_dir)
+                            })
                             .unwrap_or(false),
                         SftpPane::Remote => self
-                            .sftp_remote_entries
-                            .iter()
-                            .find(|entry| entry.name == name)
-                            .map(|entry| entry.is_dir)
+                            .sftp_state_for_tab(self.active_tab)
+                            .and_then(|state| {
+                                state
+                                    .remote_entries
+                                    .iter()
+                                    .find(|entry| entry.name == name)
+                                    .map(|entry| entry.is_dir)
+                            })
                             .unwrap_or(false),
                     };
-                    self.sftp_delete_target = Some(crate::ui::state::SftpPendingAction {
-                        pane,
-                        name,
-                        is_dir,
-                    });
+                    if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                        state.delete_target = Some(crate::ui::state::SftpPendingAction {
+                            pane,
+                            name,
+                            is_dir,
+                        });
+                    }
                 }
             }
             Message::SftpTransferCancel(id) => {
-                if let Some(transfer) = self
-                    .sftp_transfers
-                    .iter_mut()
-                    .find(|transfer| transfer.id == id)
-                {
-                    transfer.cancel_flag.store(true, Ordering::SeqCst);
-                    transfer.pause_flag.store(false, Ordering::SeqCst);
-                    transfer.pause_notify.notify_waiters();
-                    if matches!(
-                        transfer.status,
-                        SftpTransferStatus::Queued | SftpTransferStatus::Uploading
-                    ) {
-                        transfer.status = SftpTransferStatus::Canceled;
-                    }
-                }
-                if let Some(task) = schedule_transfer_tasks(self) {
-                    return task;
-                }
-            }
-            Message::SftpTransferPause(id) => {
-                if let Some(transfer) = self
-                    .sftp_transfers
-                    .iter_mut()
-                    .find(|transfer| transfer.id == id)
-                {
-                    if transfer.status == SftpTransferStatus::Uploading {
-                        transfer.pause_flag.store(true, Ordering::SeqCst);
-                        transfer.status = SftpTransferStatus::Paused;
-                    }
-                }
-                if let Some(task) = schedule_transfer_tasks(self) {
-                    return task;
-                }
-            }
-            Message::SftpTransferResume(id) => {
-                let active = self
-                    .sftp_transfers
-                    .iter()
-                    .filter(|transfer| transfer.status == SftpTransferStatus::Uploading)
-                    .count();
-                if active < self.sftp_max_concurrent {
-                    if let Some(transfer) = self
-                        .sftp_transfers
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    if let Some(transfer) = state
+                        .transfers
                         .iter_mut()
                         .find(|transfer| transfer.id == id)
                     {
-                        if transfer.status == SftpTransferStatus::Paused {
-                            transfer.pause_flag.store(false, Ordering::SeqCst);
-                            transfer.pause_notify.notify_waiters();
-                            transfer.status = SftpTransferStatus::Uploading;
+                        transfer.cancel_flag.store(true, Ordering::SeqCst);
+                        transfer.pause_flag.store(false, Ordering::SeqCst);
+                        transfer.pause_notify.notify_waiters();
+                        if matches!(
+                            transfer.status,
+                            SftpTransferStatus::Queued | SftpTransferStatus::Uploading
+                        ) {
+                            transfer.status = SftpTransferStatus::Canceled;
+                        }
+                    }
+                    if let Some(task) = schedule_transfer_tasks(self, self.active_tab) {
+                        return task;
+                    }
+                }
+            }
+            Message::SftpTransferPause(id) => {
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    if let Some(transfer) = state
+                        .transfers
+                        .iter_mut()
+                        .find(|transfer| transfer.id == id)
+                    {
+                        if transfer.status == SftpTransferStatus::Uploading {
+                            transfer.pause_flag.store(true, Ordering::SeqCst);
+                            transfer.status = SftpTransferStatus::Paused;
+                        }
+                    }
+                    if let Some(task) = schedule_transfer_tasks(self, self.active_tab) {
+                        return task;
+                    }
+                }
+            }
+            Message::SftpTransferResume(id) => {
+                let max_concurrent = self.sftp_max_concurrent;
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    let active = state
+                        .transfers
+                        .iter()
+                        .filter(|transfer| transfer.status == SftpTransferStatus::Uploading)
+                        .count();
+                    if active < max_concurrent {
+                        if let Some(transfer) = state
+                            .transfers
+                            .iter_mut()
+                            .find(|transfer| transfer.id == id)
+                        {
+                            if transfer.status == SftpTransferStatus::Paused {
+                                transfer.pause_flag.store(false, Ordering::SeqCst);
+                                transfer.pause_notify.notify_waiters();
+                                transfer.status = SftpTransferStatus::Uploading;
+                            }
                         }
                     }
                 }
             }
             Message::SftpTransferRetry(id) => {
-                if let Some(transfer) = self
-                    .sftp_transfers
-                    .iter_mut()
-                    .find(|transfer| transfer.id == id)
-                {
-                    transfer.cancel_flag.store(false, Ordering::SeqCst);
-                    transfer.status = SftpTransferStatus::Queued;
-                    transfer.bytes_sent = 0;
-                    transfer.bytes_total = 0;
-                    transfer.started_at = None;
-                    transfer.last_update = None;
-                    transfer.last_bytes_sent = 0;
-                    transfer.last_rate_bps = None;
-                    transfer.cancel_flag.store(false, Ordering::SeqCst);
-                    transfer.pause_flag.store(false, Ordering::SeqCst);
-                }
-                if let Some(task) = schedule_transfer_tasks(self) {
-                    return task;
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    if let Some(transfer) = state
+                        .transfers
+                        .iter_mut()
+                        .find(|transfer| transfer.id == id)
+                    {
+                        transfer.cancel_flag.store(false, Ordering::SeqCst);
+                        transfer.status = SftpTransferStatus::Queued;
+                        transfer.bytes_sent = 0;
+                        transfer.bytes_total = 0;
+                        transfer.started_at = None;
+                        transfer.last_update = None;
+                        transfer.last_bytes_sent = 0;
+                        transfer.last_rate_bps = None;
+                        transfer.cancel_flag.store(false, Ordering::SeqCst);
+                        transfer.pause_flag.store(false, Ordering::SeqCst);
+                    }
+                    if let Some(task) = schedule_transfer_tasks(self, self.active_tab) {
+                        return task;
+                    }
                 }
             }
             Message::SftpTransferClearDone => {
-                self.sftp_transfers.retain(|transfer| {
-                    !matches!(
-                        transfer.status,
-                        SftpTransferStatus::Completed
-                            | SftpTransferStatus::Failed(_)
-                            | SftpTransferStatus::Canceled
-                    )
-                });
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.transfers.retain(|transfer| {
+                        !matches!(
+                            transfer.status,
+                            SftpTransferStatus::Completed
+                                | SftpTransferStatus::Failed(_)
+                                | SftpTransferStatus::Canceled
+                        )
+                    });
+                }
             }
             Message::SftpRenameStart(pane, name, is_dir) => {
-                self.sftp_rename_target = Some(crate::ui::state::SftpPendingAction {
-                    pane,
-                    name: name.clone(),
-                    is_dir,
-                });
-                self.sftp_rename_value = name;
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.rename_target = Some(crate::ui::state::SftpPendingAction {
+                        pane,
+                        name: name.clone(),
+                        is_dir,
+                    });
+                    state.rename_value = name;
+                }
                 return iced::widget::operation::focus(self.sftp_rename_input_id.clone());
             }
             Message::SftpRenameInput(value) => {
-                self.sftp_rename_value = value;
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.rename_value = value;
+                }
             }
             Message::SftpRenameCancel => {
-                self.sftp_rename_target = None;
-                self.sftp_rename_value.clear();
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.rename_target = None;
+                    state.rename_value.clear();
+                }
             }
             Message::SftpRenameConfirm => {
                 if let Some(task) = start_rename(self) {
@@ -439,43 +516,46 @@ impl App {
                 }
             }
             Message::SftpRenameFinished(tab_index, result) => {
-                if tab_index != self.active_tab {
-                    return Task::none();
-                }
-                let target = self.sftp_rename_target.clone();
-                self.sftp_rename_target = None;
-                self.sftp_rename_value.clear();
-                match result {
-                    Ok(()) => {
-                        if let Some(target) = target {
-                            return match target.pane {
-                                SftpPane::Local => Task::done(Message::SftpLocalPathChanged(
-                                    self.sftp_local_path.clone(),
-                                )),
-                                SftpPane::Remote => {
-                                    if let Some(task) = start_remote_list(self, self.active_tab) {
-                                        task
-                                    } else {
-                                        Task::none()
+                if let Some(state) = self.sftp_state_for_tab_mut(tab_index) {
+                    let target = state.rename_target.clone();
+                    state.rename_target = None;
+                    state.rename_value.clear();
+                    match result {
+                        Ok(()) => {
+                            if let Some(target) = target {
+                                return match target.pane {
+                                    SftpPane::Local => Task::done(
+                                        Message::SftpLocalPathChanged(state.local_path.clone()),
+                                    ),
+                                    SftpPane::Remote => {
+                                        if let Some(task) = start_remote_list(self, tab_index) {
+                                            task
+                                        } else {
+                                            Task::none()
+                                        }
                                     }
-                                }
-                            };
+                                };
+                            }
                         }
-                    }
-                    Err(err) => {
-                        self.sftp_remote_error = Some(err);
+                        Err(err) => {
+                            state.remote_error = Some(err);
+                        }
                     }
                 }
             }
             Message::SftpDeleteStart(pane, name, is_dir) => {
-                self.sftp_delete_target = Some(crate::ui::state::SftpPendingAction {
-                    pane,
-                    name,
-                    is_dir,
-                });
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.delete_target = Some(crate::ui::state::SftpPendingAction {
+                        pane,
+                        name,
+                        is_dir,
+                    });
+                }
             }
             Message::SftpDeleteCancel => {
-                self.sftp_delete_target = None;
+                if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
+                    state.delete_target = None;
+                }
             }
             Message::SftpDeleteConfirm => {
                 if let Some(task) = start_delete(self) {
@@ -483,30 +563,29 @@ impl App {
                 }
             }
             Message::SftpDeleteFinished(tab_index, result) => {
-                if tab_index != self.active_tab {
-                    return Task::none();
-                }
-                let target = self.sftp_delete_target.clone();
-                self.sftp_delete_target = None;
-                match result {
-                    Ok(()) => {
-                        if let Some(target) = target {
-                            return match target.pane {
-                                SftpPane::Local => Task::done(Message::SftpLocalPathChanged(
-                                    self.sftp_local_path.clone(),
-                                )),
-                                SftpPane::Remote => {
-                                    if let Some(task) = start_remote_list(self, self.active_tab) {
-                                        task
-                                    } else {
-                                        Task::none()
+                if let Some(state) = self.sftp_state_for_tab_mut(tab_index) {
+                    let target = state.delete_target.clone();
+                    state.delete_target = None;
+                    match result {
+                        Ok(()) => {
+                            if let Some(target) = target {
+                                return match target.pane {
+                                    SftpPane::Local => Task::done(
+                                        Message::SftpLocalPathChanged(state.local_path.clone()),
+                                    ),
+                                    SftpPane::Remote => {
+                                        if let Some(task) = start_remote_list(self, tab_index) {
+                                            task
+                                        } else {
+                                            Task::none()
+                                        }
                                     }
-                                }
-                            };
+                                };
+                            }
                         }
-                    }
-                    Err(err) => {
-                        self.sftp_remote_error = Some(err);
+                        Err(err) => {
+                            state.remote_error = Some(err);
+                        }
                     }
                 }
             }
@@ -514,56 +593,58 @@ impl App {
                 let status = update.status.clone();
                 let mut should_refresh = false;
                 let mut error_message: Option<String> = None;
-                if let Some(transfer) = self
-                    .sftp_transfers
-                    .iter_mut()
-                    .find(|transfer| transfer.id == update.id)
-                {
-                    transfer.bytes_sent = update.bytes_sent;
-                    transfer.bytes_total = update.bytes_total;
-                    let now = std::time::Instant::now();
-                    if transfer.started_at.is_none() {
-                        transfer.started_at = Some(now);
-                    }
-                    if let Some(last_update) = transfer.last_update {
-                        let elapsed = now.duration_since(last_update);
-                        if elapsed.as_millis() >= 200 {
-                            let delta_bytes = update.bytes_sent.saturating_sub(transfer.last_bytes_sent);
-                            let rate = (delta_bytes as f64 / elapsed.as_secs_f64()) as u64;
-                            transfer.last_rate_bps = Some(rate);
+                if let Some(state) = self.sftp_state_for_tab_mut(update.tab_index) {
+                    if let Some(transfer) = state
+                        .transfers
+                        .iter_mut()
+                        .find(|transfer| transfer.id == update.id)
+                    {
+                        transfer.bytes_sent = update.bytes_sent;
+                        transfer.bytes_total = update.bytes_total;
+                        let now = std::time::Instant::now();
+                        if transfer.started_at.is_none() {
+                            transfer.started_at = Some(now);
+                        }
+                        if let Some(last_update) = transfer.last_update {
+                            let elapsed = now.duration_since(last_update);
+                            if elapsed.as_millis() >= 200 {
+                                let delta_bytes =
+                                    update.bytes_sent.saturating_sub(transfer.last_bytes_sent);
+                                let rate = (delta_bytes as f64 / elapsed.as_secs_f64()) as u64;
+                                transfer.last_rate_bps = Some(rate);
+                                transfer.last_update = Some(now);
+                                transfer.last_bytes_sent = update.bytes_sent;
+                            }
+                        } else {
                             transfer.last_update = Some(now);
                             transfer.last_bytes_sent = update.bytes_sent;
                         }
-                    } else {
-                        transfer.last_update = Some(now);
-                        transfer.last_bytes_sent = update.bytes_sent;
-                    }
-                    if let Some(status_value) = status.clone() {
-                        transfer.status = status_value;
-                    }
-                    if matches!(
-                        status,
-                        Some(
-                            SftpTransferStatus::Completed
-                                | SftpTransferStatus::Canceled
-                                | SftpTransferStatus::Paused
-                        )
-                    )
-                        && transfer.direction == SftpTransferDirection::Upload
-                        && update.tab_index == self.active_tab
-                        && self.sftp_panel_open
-                    {
-                        should_refresh = true;
-                    }
-                    if let Some(SftpTransferStatus::Failed(error)) = status.clone() {
-                        if update.tab_index == self.active_tab {
+                        if let Some(status_value) = status.clone() {
+                            transfer.status = status_value;
+                        }
+                        if matches!(
+                            status,
+                            Some(
+                                SftpTransferStatus::Completed
+                                    | SftpTransferStatus::Canceled
+                                    | SftpTransferStatus::Paused
+                            )
+                        ) && transfer.direction == SftpTransferDirection::Upload
+                            && update.tab_index == self.active_tab
+                            && self.sftp_panel_open
+                        {
+                            should_refresh = true;
+                        }
+                        if let Some(SftpTransferStatus::Failed(error)) = status.clone() {
                             error_message = Some(error);
                         }
                     }
                 }
 
                 if let Some(message) = error_message {
-                    self.sftp_remote_error = Some(message);
+                    if let Some(state) = self.sftp_state_for_tab_mut(update.tab_index) {
+                        state.remote_error = Some(message);
+                    }
                 }
 
                 let mut tasks = Vec::new();
@@ -582,7 +663,7 @@ impl App {
                     )
                 )
                 {
-                    if let Some(task) = schedule_transfer_tasks(self) {
+                    if let Some(task) = schedule_transfer_tasks(self, update.tab_index) {
                         tasks.push(task);
                     }
                 }
@@ -639,7 +720,6 @@ impl App {
             Message::SessionConnected(result, tab_index) => match result {
                 Ok((session, rx)) => {
                     if let Some(tab) = self.tabs.get_mut(tab_index) {
-                        tab.title = format!("{} (Connected)", tab.title);
                         tab.ssh_handle = Some(session.clone()); // Store SSH handle
                         tab.session = None; // Not fully ready (shell not opened)
                         tab.rx = Some(rx.clone());
@@ -679,7 +759,6 @@ impl App {
                     self.last_error = Some((e.clone(), std::time::Instant::now()));
 
                     if let Some(tab) = self.tabs.get_mut(tab_index) {
-                        tab.title = format!("{} (Failed)", tab.title);
                         tab.state = SessionState::Failed(e.clone()); // Transition to Failed
                     }
                     println!("Connection failed: {}", e);
@@ -998,9 +1077,11 @@ fn join_remote_path(base: &str, name: &str) -> String {
 
 fn start_remote_list(app: &mut App, tab_index: usize) -> Option<Task<Message>> {
     if tab_index == 0 || tab_index >= app.tabs.len() {
-        app.sftp_remote_entries.clear();
-        app.sftp_remote_error = Some("No active SSH session".to_string());
-        app.sftp_remote_loading = false;
+        if let Some(state) = app.sftp_state_for_tab_mut(tab_index) {
+            state.remote_entries.clear();
+            state.remote_error = Some("No active SSH session".to_string());
+            state.remote_loading = false;
+        }
         return None;
     }
 
@@ -1008,17 +1089,24 @@ fn start_remote_list(app: &mut App, tab_index: usize) -> Option<Task<Message>> {
     let session = match &tab.session {
         Some(session) => session.clone(),
         None => {
-            app.sftp_remote_entries.clear();
-            app.sftp_remote_error = Some("No active SSH session".to_string());
-            app.sftp_remote_loading = false;
+            if let Some(state) = app.sftp_state_for_tab_mut(tab_index) {
+                state.remote_entries.clear();
+                state.remote_error = Some("No active SSH session".to_string());
+                state.remote_loading = false;
+            }
             return None;
         }
     };
 
     let sftp_session = tab.sftp_session.clone();
-    let path = normalize_remote_path(&app.sftp_remote_path);
-    app.sftp_remote_loading = true;
-    app.sftp_remote_error = None;
+    let path = app
+        .sftp_state_for_tab(tab_index)
+        .map(|state| normalize_remote_path(&state.remote_path))
+        .unwrap_or_else(|| ".".to_string());
+    if let Some(state) = app.sftp_state_for_tab_mut(tab_index) {
+        state.remote_loading = true;
+        state.remote_error = None;
+    }
     Some(Task::perform(
         async move { load_remote_entries(session, sftp_session, path).await },
         move |result| Message::SftpRemoteLoaded(tab_index, result),
@@ -1101,29 +1189,32 @@ fn normalize_remote_path(path: &str) -> String {
 }
 
 fn start_upload(app: &mut App, name: String) -> Option<Task<Message>> {
-    if app.active_tab == 0 || app.active_tab >= app.tabs.len() {
-        app.sftp_remote_error = Some("No active SSH session".to_string());
+    let tab_index = app.active_tab;
+    if tab_index == 0 || tab_index >= app.tabs.len() {
+        if let Some(state) = app.sftp_state_for_tab_mut(tab_index) {
+            state.remote_error = Some("No active SSH session".to_string());
+        }
         return None;
     }
 
-    let is_dir = app
-        .sftp_local_entries
+    let state = app.sftp_state_for_tab_mut(tab_index)?;
+    let is_dir = state
+        .local_entries
         .iter()
         .find(|entry| entry.name == name)
         .map(|entry| entry.is_dir)
         .unwrap_or(false);
 
     if is_dir {
-        app.sftp_remote_error = Some("Directory upload not supported yet".to_string());
+        state.remote_error = Some("Directory upload not supported yet".to_string());
         return None;
     }
 
-    let tab_index = app.active_tab;
-    let local_path = join_local_path(&app.sftp_local_path, &name);
-    let remote_path = join_remote_path(&app.sftp_remote_path, &name);
+    let local_path = join_local_path(&state.local_path, &name);
+    let remote_path = join_remote_path(&state.remote_path, &name);
     let transfer_id = uuid::Uuid::new_v4();
 
-    app.sftp_transfers.push(SftpTransfer {
+    state.transfers.push(SftpTransfer {
         id: transfer_id,
         tab_index,
         name: name.clone(),
@@ -1141,9 +1232,9 @@ fn start_upload(app: &mut App, name: String) -> Option<Task<Message>> {
         pause_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         pause_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
     });
-    app.sftp_remote_error = None;
+    state.remote_error = None;
 
-    schedule_transfer_tasks(app)
+    schedule_transfer_tasks(app, tab_index)
 }
 
 async fn upload_local_file(
@@ -1288,29 +1379,32 @@ async fn upload_local_file(
 }
 
 fn start_download(app: &mut App, name: String) -> Option<Task<Message>> {
-    if app.active_tab == 0 || app.active_tab >= app.tabs.len() {
-        app.sftp_remote_error = Some("No active SSH session".to_string());
+    let tab_index = app.active_tab;
+    if tab_index == 0 || tab_index >= app.tabs.len() {
+        if let Some(state) = app.sftp_state_for_tab_mut(tab_index) {
+            state.remote_error = Some("No active SSH session".to_string());
+        }
         return None;
     }
 
-    let is_dir = app
-        .sftp_remote_entries
+    let state = app.sftp_state_for_tab_mut(tab_index)?;
+    let is_dir = state
+        .remote_entries
         .iter()
         .find(|entry| entry.name == name)
         .map(|entry| entry.is_dir)
         .unwrap_or(false);
 
     if is_dir {
-        app.sftp_remote_error = Some("Directory download not supported yet".to_string());
+        state.remote_error = Some("Directory download not supported yet".to_string());
         return None;
     }
 
-    let tab_index = app.active_tab;
-    let local_path = join_local_path(&app.sftp_local_path, &name);
-    let remote_path = join_remote_path(&app.sftp_remote_path, &name);
+    let local_path = join_local_path(&state.local_path, &name);
+    let remote_path = join_remote_path(&state.remote_path, &name);
     let transfer_id = uuid::Uuid::new_v4();
 
-    app.sftp_transfers.push(SftpTransfer {
+    state.transfers.push(SftpTransfer {
         id: transfer_id,
         tab_index,
         name: name.clone(),
@@ -1328,25 +1422,33 @@ fn start_download(app: &mut App, name: String) -> Option<Task<Message>> {
         pause_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         pause_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
     });
-    app.sftp_remote_error = None;
+    state.remote_error = None;
 
-    schedule_transfer_tasks(app)
+    schedule_transfer_tasks(app, tab_index)
 }
 
 fn start_rename(app: &mut App) -> Option<Task<Message>> {
-    let target = app.sftp_rename_target.clone()?;
-    let new_name = app.sftp_rename_value.trim().to_string();
-    if new_name.is_empty() || new_name == target.name {
-        app.sftp_rename_target = None;
-        app.sftp_rename_value.clear();
-        return None;
-    }
-
     let tab_index = app.active_tab;
+    let (target, new_name, local_path, remote_path) = {
+        let state = app.sftp_state_for_tab_mut(tab_index)?;
+        let target = state.rename_target.clone()?;
+        let new_name = state.rename_value.trim().to_string();
+        if new_name.is_empty() || new_name == target.name {
+            state.rename_target = None;
+            state.rename_value.clear();
+            return None;
+        }
+        (
+            target,
+            new_name,
+            state.local_path.clone(),
+            state.remote_path.clone(),
+        )
+    };
     match target.pane {
         SftpPane::Local => {
-            let old_path = join_local_path(&app.sftp_local_path, &target.name);
-            let new_path = join_local_path(&app.sftp_local_path, &new_name);
+            let old_path = join_local_path(&local_path, &target.name);
+            let new_path = join_local_path(&local_path, &new_name);
             Some(Task::perform(
                 async move {
                     tokio::fs::rename(old_path, new_path)
@@ -1363,8 +1465,8 @@ fn start_rename(app: &mut App) -> Option<Task<Message>> {
                 None => return None,
             };
             let sftp_session = tab.sftp_session.clone();
-            let old_path = join_remote_path(&app.sftp_remote_path, &target.name);
-            let new_path = join_remote_path(&app.sftp_remote_path, &new_name);
+            let old_path = join_remote_path(&remote_path, &target.name);
+            let new_path = join_remote_path(&remote_path, &new_name);
             Some(Task::perform(
                 async move {
                     let mut guard = sftp_session.lock().await;
@@ -1394,11 +1496,15 @@ fn start_rename(app: &mut App) -> Option<Task<Message>> {
 }
 
 fn start_delete(app: &mut App) -> Option<Task<Message>> {
-    let target = app.sftp_delete_target.clone()?;
     let tab_index = app.active_tab;
+    let (target, local_path, remote_path) = {
+        let state = app.sftp_state_for_tab_mut(tab_index)?;
+        let target = state.delete_target.clone()?;
+        (target, state.local_path.clone(), state.remote_path.clone())
+    };
     match target.pane {
         SftpPane::Local => {
-            let path = join_local_path(&app.sftp_local_path, &target.name);
+            let path = join_local_path(&local_path, &target.name);
             Some(Task::perform(
                 async move {
                     if target.is_dir {
@@ -1421,7 +1527,7 @@ fn start_delete(app: &mut App) -> Option<Task<Message>> {
                 None => return None,
             };
             let sftp_session = tab.sftp_session.clone();
-            let path = join_remote_path(&app.sftp_remote_path, &target.name);
+            let path = join_remote_path(&remote_path, &target.name);
             Some(Task::perform(
                 async move {
                     let mut guard = sftp_session.lock().await;
@@ -1456,51 +1562,63 @@ fn start_delete(app: &mut App) -> Option<Task<Message>> {
     }
 }
 
-fn schedule_transfer_tasks(app: &mut App) -> Option<Task<Message>> {
+fn schedule_transfer_tasks(app: &mut App, tab_index: usize) -> Option<Task<Message>> {
     let max_concurrent = app.sftp_max_concurrent.max(1);
-    let mut active = app
-        .sftp_transfers
-        .iter()
-        .filter(|transfer| transfer.status == SftpTransferStatus::Uploading)
-        .count();
-
+    let tx = app.sftp_transfer_tx.clone();
     let mut tasks = Vec::new();
-    while active < max_concurrent {
-        let Some(index) = app
-            .sftp_transfers
-            .iter()
-            .position(|transfer| transfer.status == SftpTransferStatus::Queued)
-        else {
-            break;
+
+    loop {
+        let (transfer, transfer_index) = {
+            let state = app.sftp_state_for_tab_mut(tab_index)?;
+            let active = state
+                .transfers
+                .iter()
+                .filter(|transfer| transfer.status == SftpTransferStatus::Uploading)
+                .count();
+            if active >= max_concurrent {
+                break;
+            }
+            let Some(index) = state
+                .transfers
+                .iter()
+                .position(|transfer| transfer.status == SftpTransferStatus::Queued)
+            else {
+                break;
+            };
+            let transfer = state.transfers[index].clone();
+            state.transfers[index].status = SftpTransferStatus::Uploading;
+            (transfer, index)
         };
 
-        let transfer = app.sftp_transfers[index].clone();
         let tab = match app.tabs.get(transfer.tab_index) {
             Some(tab) => tab,
             None => {
-                app.sftp_transfers[index].status =
-                    SftpTransferStatus::Failed("Invalid session tab".to_string());
+                if let Some(state) = app.sftp_state_for_tab_mut(tab_index) {
+                    if let Some(entry) = state.transfers.get_mut(transfer_index) {
+                        entry.status =
+                            SftpTransferStatus::Failed("Invalid session tab".to_string());
+                    }
+                }
                 continue;
             }
         };
         let session = match &tab.session {
             Some(session) => session.clone(),
             None => {
-                app.sftp_transfers[index].status =
-                    SftpTransferStatus::Failed("No active SSH session".to_string());
+                if let Some(state) = app.sftp_state_for_tab_mut(tab_index) {
+                    if let Some(entry) = state.transfers.get_mut(transfer_index) {
+                        entry.status =
+                            SftpTransferStatus::Failed("No active SSH session".to_string());
+                    }
+                }
                 continue;
             }
         };
 
         let sftp_session = tab.sftp_session.clone();
-        app.sftp_transfers[index].status = SftpTransferStatus::Uploading;
-        active += 1;
-
-        let tx = app.sftp_transfer_tx.clone();
+        let tx = tx.clone();
         tasks.push(Task::perform(
-            async move {
-                run_transfer(session, sftp_session, transfer, tx).await
-            },
+            async move { run_transfer(session, sftp_session, transfer, tx).await },
             |_| Message::Ignore,
         ));
     }

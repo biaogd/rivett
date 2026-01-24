@@ -3,9 +3,10 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use uuid::Uuid;
 
 use crate::ui::message::{ActiveView, Message};
-use crate::ui::state::{SessionState, SessionTab};
+use crate::ui::state::{SessionState, SessionTab, SftpState};
 use crate::ui::App;
 
 pub(in crate::ui) fn create_local_tab(app: &mut App) -> Task<Message> {
@@ -62,6 +63,11 @@ pub(in crate::ui) fn create_local_tab(app: &mut App) -> Task<Message> {
                     });
 
                     let mut tab = SessionTab::new("Local Shell");
+                    let sftp_key = format!("local:{}", Uuid::new_v4());
+                    tab.sftp_key = Some(sftp_key.clone());
+                    app.sftp_states
+                        .entry(sftp_key)
+                        .or_insert_with(SftpState::new);
                     tab.state = SessionState::Connected;
                     tab.session = Some(session.clone());
                     tab.rx = Some(Arc::new(Mutex::new(rx)));

@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::session::SessionConfig;
 use crate::ui::message::{ActiveView, Message};
-use crate::ui::state::{ConnectionTestStatus, SessionTab};
+use crate::ui::state::{ConnectionTestStatus, SessionTab, SftpState};
 use crate::ui::App;
 
 pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
@@ -89,7 +89,14 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 );
 
                 app.tabs.push(SessionTab::new(&name));
-                app.active_tab = app.tabs.len() - 1;
+                let new_tab_index = app.tabs.len() - 1;
+                if let Some(tab) = app.tabs.get_mut(new_tab_index) {
+                    tab.sftp_key = Some(id.clone());
+                }
+                app.sftp_states
+                    .entry(id.clone())
+                    .or_insert_with(SftpState::new);
+                app.active_tab = new_tab_index;
                 app.active_view = ActiveView::Terminal;
                 app.last_terminal_tab = app.active_tab;
                 let tab_index = app.active_tab;

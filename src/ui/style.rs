@@ -326,6 +326,19 @@ pub fn menu_button(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
     }
 }
 
+pub fn menu_button_disabled() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme, _status| button::Style {
+        background: Some(Background::Color(color_panel())),
+        text_color: color_text_muted(),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        ..button::Style::default()
+    }
+}
+
 // Tab bar container
 pub fn tab_bar(_theme: &Theme) -> container::Style {
     container::Style {

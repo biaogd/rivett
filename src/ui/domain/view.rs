@@ -106,6 +106,13 @@ impl App {
         };
 
         let main_view: Element<'_, Message> = if self.sftp_panel_open {
+            let sftp_state = self
+                .sftp_state_for_tab(self.active_tab)
+                .unwrap_or_else(|| {
+                    self.sftp_states
+                        .get("session-manager")
+                        .expect("missing sftp state")
+                });
             let handle = iced::widget::mouse_area(
                 container(Space::new())
                     .width(Length::Fixed(10.0))
@@ -115,24 +122,23 @@ impl App {
             .on_press(Message::SftpDragStart);
 
             let sftp_content = container(views::sftp::render(
-                &self.sftp_local_path,
-                &self.sftp_remote_path,
-                &self.sftp_local_entries,
-                self.sftp_local_error.as_deref(),
-                &self.sftp_remote_entries,
-                self.sftp_remote_error.as_deref(),
-                self.sftp_remote_loading,
-                self.sftp_local_selected.as_deref(),
-                self.sftp_remote_selected.as_deref(),
+                &sftp_state.local_path,
+                &sftp_state.remote_path,
+                &sftp_state.local_entries,
+                sftp_state.local_error.as_deref(),
+                &sftp_state.remote_entries,
+                sftp_state.remote_error.as_deref(),
+                sftp_state.remote_loading,
+                sftp_state.local_selected.as_deref(),
+                sftp_state.remote_selected.as_deref(),
                 sftp_name_column_width(self.sftp_panel_width),
-                self.sftp_context_menu.as_ref(),
+                sftp_state.context_menu.as_ref(),
                 self.sftp_panel_width,
                 self.window_height as f32,
-                &self.sftp_transfers,
-                self.active_tab,
+                &sftp_state.transfers,
                 &self.sftp_rename_input_id,
-                self.sftp_rename_target.as_ref(),
-                &self.sftp_rename_value,
+                sftp_state.rename_target.as_ref(),
+                &sftp_state.rename_value,
             ))
             .padding(12)
             .width(Length::Fill)
@@ -205,8 +211,16 @@ impl App {
             main_view
         };
 
-        let view_with_sftp_dialog = if self.sftp_delete_target.is_some() {
-            let dialog_content = if let Some(target) = &self.sftp_delete_target {
+        let sftp_state = self
+            .sftp_state_for_tab(self.active_tab)
+            .unwrap_or_else(|| {
+                self.sftp_states
+                    .get("session-manager")
+                    .expect("missing sftp state")
+            });
+
+        let view_with_sftp_dialog = if sftp_state.delete_target.is_some() {
+            let dialog_content = if let Some(target) = &sftp_state.delete_target {
                 views::sftp::delete_dialog(&target.name, target.is_dir)
             } else {
                 container(Space::new()).into()

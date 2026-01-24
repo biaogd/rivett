@@ -21,8 +21,8 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Mess
             let rows = (term_h / app.cell_height()) as usize;
 
             if width > 0 {
-                app.sftp_panel_width =
-                    (width as f32 * 0.45).clamp(420.0, 720.0);
+                let max_width = (width as f32 - 240.0).max(320.0);
+                app.sftp_panel_width = app.sftp_panel_width.clamp(280.0, max_width);
             }
             app.pending_resize = Some((cols, rows, std::time::Instant::now()));
             Some(Task::done(Message::TerminalResize(cols, rows)))
@@ -46,7 +46,12 @@ pub(in crate::ui) fn handle_runtime_event(
     window: iced::window::Id,
 ) -> Option<Task<Message>> {
     if Some(window) == app.main_window {
-        if app.sftp_panel_open && app.sftp_rename_target.is_some() {
+        if app.sftp_panel_open
+            && app
+                .sftp_state_for_tab(app.active_tab)
+                .map(|state| state.rename_target.is_some())
+                .unwrap_or(false)
+        {
             if let iced::event::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) =
                 event
             {

@@ -27,7 +27,6 @@ pub fn render<'a>(
     panel_width: f32,
     panel_height: f32,
     transfers: &'a [SftpTransfer],
-    active_tab: usize,
     rename_input_id: &'a Id,
     rename_target: Option<&'a crate::ui::state::SftpPendingAction>,
     rename_value: &'a str,
@@ -301,12 +300,7 @@ pub fn render<'a>(
     let transfer_name_width = (queue_content_width * (3.6 / 11.0)).max(140.0);
 
     let mut queue_rows = column![];
-    for transfer in transfers
-        .iter()
-        .filter(|transfer| transfer.tab_index == active_tab)
-        .rev()
-        .take(6)
-    {
+    for transfer in transfers.iter().rev().take(6) {
         let (status, progress) = transfer_status(transfer);
         queue_rows = queue_rows.push(transfer_row(
             transfer,
@@ -315,10 +309,7 @@ pub fn render<'a>(
             transfer_name_width,
         ));
     }
-    if transfers
-        .iter()
-        .all(|transfer| transfer.tab_index != active_tab)
-    {
+    if transfers.is_empty() {
         queue_rows = queue_rows.push(
             text("No transfers").size(12).style(ui_style::muted_text),
         );

@@ -4,9 +4,10 @@ use iced::widget::canvas::Cache;
 use iced::Point;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use tokio::sync::Notify;
 use std::sync::mpsc;
+use std::time::Instant;
 use tokio::sync::Mutex;
+use tokio::sync::Notify;
 use russh_sftp::client::SftpSession;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +38,7 @@ pub struct SessionTab {
     pub pending_damage_full: bool,
     pub pending_damage_lines: Vec<usize>,
     pub sftp_session: Arc<Mutex<Option<SftpSession>>>,
+    pub sftp_key: Option<String>,
 }
 
 impl std::fmt::Debug for SessionTab {
@@ -131,6 +133,27 @@ pub struct SftpContextMenu {
     pub position: Point,
 }
 
+#[derive(Debug, Clone)]
+pub struct SftpState {
+    pub local_path: String,
+    pub remote_path: String,
+    pub local_entries: Vec<SftpEntry>,
+    pub local_error: Option<String>,
+    pub remote_entries: Vec<SftpEntry>,
+    pub remote_error: Option<String>,
+    pub remote_loading: bool,
+    pub local_selected: Option<String>,
+    pub remote_selected: Option<String>,
+    pub local_last_click: Option<(String, Instant)>,
+    pub remote_last_click: Option<(String, Instant)>,
+    pub context_menu: Option<SftpContextMenu>,
+    pub panel_cursor: Option<Point>,
+    pub transfers: Vec<SftpTransfer>,
+    pub rename_target: Option<SftpPendingAction>,
+    pub rename_value: String,
+    pub delete_target: Option<SftpPendingAction>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SftpContextAction {
     Upload,
@@ -159,6 +182,7 @@ impl Clone for SessionTab {
             pending_damage_full: self.pending_damage_full,
             pending_damage_lines: self.pending_damage_lines.clone(),
             sftp_session: self.sftp_session.clone(),
+            sftp_key: self.sftp_key.clone(),
         }
     }
 }
@@ -214,6 +238,7 @@ impl SessionTab {
             pending_damage_full: true,
             pending_damage_lines: Vec::new(),
             sftp_session: Arc::new(Mutex::new(None)),
+            sftp_key: None,
         }
     }
 
@@ -242,6 +267,34 @@ impl SessionTab {
         self.pending_damage_lines.extend_from_slice(lines);
         self.is_dirty = true;
         self.last_data_received = std::time::Instant::now();
+    }
+}
+
+impl SftpState {
+    pub fn new() -> Self {
+        let local_path = dirs::home_dir()
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_else(|| "~".to_string());
+
+        Self {
+            local_path,
+            remote_path: ".".to_string(),
+            local_entries: Vec::new(),
+            local_error: None,
+            remote_entries: Vec::new(),
+            remote_error: None,
+            remote_loading: false,
+            local_selected: None,
+            remote_selected: None,
+            local_last_click: None,
+            remote_last_click: None,
+            context_menu: None,
+            panel_cursor: None,
+            transfers: Vec::new(),
+            rename_target: None,
+            rename_value: String::new(),
+            delete_target: None,
+        }
     }
 }
 

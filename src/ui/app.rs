@@ -8,9 +8,9 @@ use crate::settings::{AppSettings, SettingsStorage};
 use crate::session::{SessionConfig, SessionStorage};
 use super::message::{ActiveView, Message};
 use super::state::{
-    ConnectionTestStatus, SessionTab, SftpContextMenu, SftpEntry, SftpPendingAction, SftpTransfer,
-    SftpTransferUpdate,
+    ConnectionTestStatus, SessionTab, SftpState, SftpTransferUpdate,
 };
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct App {
@@ -61,29 +61,14 @@ pub struct App {
     pub(in crate::ui) last_terminal_tab: usize,
     pub(in crate::ui) sftp_panel_open: bool,
     pub(in crate::ui) sftp_panel_width: f32,
+    pub(in crate::ui) sftp_panel_initialized: bool,
     pub(in crate::ui) sftp_dragging: bool,
-    pub(in crate::ui) sftp_local_path: String,
-    pub(in crate::ui) sftp_remote_path: String,
-    pub(in crate::ui) sftp_local_entries: Vec<SftpEntry>,
-    pub(in crate::ui) sftp_local_error: Option<String>,
-    pub(in crate::ui) sftp_remote_entries: Vec<SftpEntry>,
-    pub(in crate::ui) sftp_remote_error: Option<String>,
-    pub(in crate::ui) sftp_remote_loading: bool,
-    pub(in crate::ui) sftp_local_selected: Option<String>,
-    pub(in crate::ui) sftp_remote_selected: Option<String>,
-    pub(in crate::ui) sftp_local_last_click: Option<(String, std::time::Instant)>,
-    pub(in crate::ui) sftp_remote_last_click: Option<(String, std::time::Instant)>,
-    pub(in crate::ui) sftp_context_menu: Option<SftpContextMenu>,
-    pub(in crate::ui) sftp_panel_cursor: Option<iced::Point>,
-    pub(in crate::ui) sftp_transfers: Vec<SftpTransfer>,
     pub(in crate::ui) sftp_transfer_tx: tokio::sync::mpsc::UnboundedSender<SftpTransferUpdate>,
     pub(in crate::ui) sftp_transfer_rx:
         Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<SftpTransferUpdate>>>,
     pub(in crate::ui) sftp_max_concurrent: usize,
     pub(in crate::ui) sftp_rename_input_id: iced::widget::Id,
-    pub(in crate::ui) sftp_rename_target: Option<SftpPendingAction>,
-    pub(in crate::ui) sftp_rename_value: String,
-    pub(in crate::ui) sftp_delete_target: Option<SftpPendingAction>,
+    pub(in crate::ui) sftp_states: HashMap<String, SftpState>,
 }
 
 impl App {
@@ -95,12 +80,16 @@ impl App {
         });
         let settings_storage = SettingsStorage::new();
         let app_settings = settings_storage.load_settings().unwrap_or_default();
-        let sessions_tab = SessionTab::new("Sessions");
+        let mut sessions_tab = SessionTab::new("Sessions");
+        sessions_tab.sftp_key = Some("session-manager".to_string());
 
         let (main_window, open_task) = iced::window::open(iced::window::Settings::default());
 
         let (sftp_transfer_tx, sftp_transfer_rx) =
             tokio::sync::mpsc::unbounded_channel::<SftpTransferUpdate>();
+
+        let mut sftp_states = HashMap::new();
+        sftp_states.insert("session-manager".to_string(), SftpState::new());
 
         (
             Self {
@@ -147,30 +136,13 @@ impl App {
                 last_terminal_tab: 0,
                 sftp_panel_open: false,
                 sftp_panel_width: 520.0,
+                sftp_panel_initialized: false,
                 sftp_dragging: false,
-                sftp_local_path: dirs::home_dir()
-                    .map(|path| path.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "~".to_string()),
-                sftp_remote_path: ".".to_string(),
-                sftp_local_entries: Vec::new(),
-                sftp_local_error: None,
-                sftp_remote_entries: Vec::new(),
-                sftp_remote_error: None,
-                sftp_remote_loading: false,
-                sftp_local_selected: None,
-                sftp_remote_selected: None,
-                sftp_local_last_click: None,
-                sftp_remote_last_click: None,
-                sftp_context_menu: None,
-                sftp_panel_cursor: None,
-                sftp_transfers: Vec::new(),
                 sftp_transfer_tx,
                 sftp_transfer_rx: Arc::new(Mutex::new(sftp_transfer_rx)),
                 sftp_max_concurrent: 2,
                 sftp_rename_input_id: iced::widget::Id::new("sftp-rename-input"),
-                sftp_rename_target: None,
-                sftp_rename_value: String::new(),
-                sftp_delete_target: None,
+                sftp_states,
             },
             open_task.map(Message::WindowOpened), // Open the main window
         )
@@ -197,4 +169,27 @@ impl App {
     // Old subscription removed
 
     // Add separate timer subscription method if needed, or combine:
+
+    pub(in crate::ui) fn sftp_key_for_tab(&self, tab_index: usize) -> Option<&str> {
+        self.tabs
+            .get(tab_index)
+            .and_then(|tab| tab.sftp_key.as_deref())
+    }
+
+    pub(in crate::ui) fn sftp_state_for_tab(&self, tab_index: usize) -> Option<&SftpState> {
+        let key = self.sftp_key_for_tab(tab_index)?;
+        self.sftp_states.get(key)
+    }
+
+    pub(in crate::ui) fn sftp_state_for_tab_mut(
+        &mut self,
+        tab_index: usize,
+    ) -> Option<&mut SftpState> {
+        let key = self.sftp_key_for_tab(tab_index)?.to_string();
+        Some(
+            self.sftp_states
+                .entry(key)
+                .or_insert_with(SftpState::new),
+        )
+    }
 }
