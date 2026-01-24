@@ -288,6 +288,9 @@ pub fn render<'a>(
         .spacing(12)
         .height(Length::Fill);
 
+    let queue_content_width = (panel_width - 24.0).max(200.0);
+    let transfer_name_width = (queue_content_width * 0.36).max(140.0);
+
     let mut queue_rows = column![];
     for transfer in transfers
         .iter()
@@ -300,6 +303,7 @@ pub fn render<'a>(
             transfer.name.clone(),
             status,
             progress,
+            transfer_name_width,
         ));
     }
     if transfers
@@ -377,7 +381,7 @@ pub fn render<'a>(
                 ui_style::menu_item_button
             };
             menu_column = menu_column.push(
-                button(text(label).size(12))
+                button(text(label).size(13))
                     .padding([6, 10])
                     .style(button_style)
                     .width(Length::Fill)
@@ -423,22 +427,32 @@ pub fn render<'a>(
     iced::widget::stack![base, overlay].into()
 }
 
-fn transfer_row(name: String, status: String, progress: f32) -> Element<'static, Message> {
+fn transfer_row(
+    name: String,
+    status: String,
+    progress: f32,
+    name_width: f32,
+) -> Element<'static, Message> {
     let progress_bar = container(progress_bar(0.0..=1.0, progress))
         .height(Length::Fixed(6.0))
         .width(Length::Fill);
 
+    let display_name = truncate_name(&name, name_width, 12.0);
     container(
-        column![
-            row![
-                text(name).size(12),
-                container("").width(Length::Fill),
-                text(status).size(11).style(ui_style::muted_text),
-            ]
-            .align_y(Alignment::Center),
-            progress_bar,
+        row![
+            text(display_name)
+                .size(12)
+                .wrapping(Wrapping::None)
+                .width(Length::FillPortion(3)),
+            progress_bar.width(Length::FillPortion(5)),
+            text(status)
+                .size(12)
+                .style(ui_style::muted_text)
+                .wrapping(Wrapping::None)
+                .width(Length::FillPortion(2)),
         ]
-        .spacing(4),
+        .align_y(Alignment::Center)
+        .spacing(6),
     )
     .padding(pad_trbl(0, 8, 0, 8))
     .into()
@@ -451,24 +465,28 @@ fn transfer_status(transfer: &SftpTransfer) -> (String, f32) {
         SftpTransferDirection::Upload => "Upload",
         SftpTransferDirection::Download => "Download",
     };
+    let rate = transfer_rate(transfer);
+    let percent = (progress * 100.0).round() as u32;
     let status = match &transfer.status {
         SftpTransferStatus::Queued => format!("{} queued", direction),
         SftpTransferStatus::Uploading => {
             if transfer.bytes_total > 0 {
-                format!(
-                    "{} {} / {}",
-                    direction,
-                    format_size(transfer.bytes_sent),
-                    format_size(transfer.bytes_total),
-                )
+                format!("{}% · {}", percent, rate)
             } else {
-                format!("{} in progress", direction)
+                format!("{} · {}", direction, rate)
             }
         }
         SftpTransferStatus::Completed => format!("{} completed", direction),
         SftpTransferStatus::Failed(_) => format!("{} failed", direction),
     };
     (status, progress)
+}
+
+fn transfer_rate(transfer: &SftpTransfer) -> String {
+    if let Some(rate) = transfer.last_rate_bps {
+        return format!("{}/s", format_size(rate));
+    }
+    "--".to_string()
 }
 
 fn pad_trbl(top: u16, right: u16, bottom: u16, left: u16) -> Padding {

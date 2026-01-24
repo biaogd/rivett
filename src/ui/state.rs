@@ -89,6 +89,10 @@ pub struct SftpTransfer {
     pub bytes_total: u64,
     pub local_path: String,
     pub remote_path: String,
+    pub started_at: Option<std::time::Instant>,
+    pub last_update: Option<std::time::Instant>,
+    pub last_bytes_sent: u64,
+    pub last_rate_bps: Option<u64>,
 }
 
 #[derive(Debug, Clone)]

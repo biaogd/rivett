@@ -285,6 +285,23 @@ impl App {
                 {
                     transfer.bytes_sent = update.bytes_sent;
                     transfer.bytes_total = update.bytes_total;
+                    let now = std::time::Instant::now();
+                    if transfer.started_at.is_none() {
+                        transfer.started_at = Some(now);
+                    }
+                    if let Some(last_update) = transfer.last_update {
+                        let elapsed = now.duration_since(last_update);
+                        if elapsed.as_millis() >= 200 {
+                            let delta_bytes = update.bytes_sent.saturating_sub(transfer.last_bytes_sent);
+                            let rate = (delta_bytes as f64 / elapsed.as_secs_f64()) as u64;
+                            transfer.last_rate_bps = Some(rate);
+                            transfer.last_update = Some(now);
+                            transfer.last_bytes_sent = update.bytes_sent;
+                        }
+                    } else {
+                        transfer.last_update = Some(now);
+                        transfer.last_bytes_sent = update.bytes_sent;
+                    }
                     if let Some(status_value) = status.clone() {
                         transfer.status = status_value;
                     }
@@ -865,6 +882,10 @@ fn start_upload(app: &mut App, name: String) -> Option<Task<Message>> {
         bytes_total: 0,
         local_path: local_path.clone(),
         remote_path: remote_path.clone(),
+        started_at: None,
+        last_update: None,
+        last_bytes_sent: 0,
+        last_rate_bps: None,
     });
     app.sftp_remote_error = None;
 
@@ -1022,6 +1043,10 @@ fn start_download(app: &mut App, name: String) -> Option<Task<Message>> {
         bytes_total: 0,
         local_path: local_path.clone(),
         remote_path: remote_path.clone(),
+        started_at: None,
+        last_update: None,
+        last_bytes_sent: 0,
+        last_rate_bps: None,
     });
     app.sftp_remote_error = None;
 
