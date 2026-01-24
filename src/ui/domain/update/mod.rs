@@ -6,6 +6,7 @@ mod window;
 use iced::Task;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::sync::atomic::Ordering;
 use tokio::sync::Mutex;
 
 use crate::core::session::Session;
@@ -274,6 +275,92 @@ impl App {
                     }
                 }
             }
+            Message::SftpTransferCancel(id) => {
+                if let Some(transfer) = self
+                    .sftp_transfers
+                    .iter_mut()
+                    .find(|transfer| transfer.id == id)
+                {
+                    transfer.cancel_flag.store(true, Ordering::SeqCst);
+                    transfer.pause_flag.store(false, Ordering::SeqCst);
+                    transfer.pause_notify.notify_waiters();
+                    if matches!(
+                        transfer.status,
+                        SftpTransferStatus::Queued | SftpTransferStatus::Uploading
+                    ) {
+                        transfer.status = SftpTransferStatus::Canceled;
+                    }
+                }
+                if let Some(task) = schedule_transfer_tasks(self) {
+                    return task;
+                }
+            }
+            Message::SftpTransferPause(id) => {
+                if let Some(transfer) = self
+                    .sftp_transfers
+                    .iter_mut()
+                    .find(|transfer| transfer.id == id)
+                {
+                    if transfer.status == SftpTransferStatus::Uploading {
+                        transfer.pause_flag.store(true, Ordering::SeqCst);
+                        transfer.status = SftpTransferStatus::Paused;
+                    }
+                }
+                if let Some(task) = schedule_transfer_tasks(self) {
+                    return task;
+                }
+            }
+            Message::SftpTransferResume(id) => {
+                let active = self
+                    .sftp_transfers
+                    .iter()
+                    .filter(|transfer| transfer.status == SftpTransferStatus::Uploading)
+                    .count();
+                if active < self.sftp_max_concurrent {
+                    if let Some(transfer) = self
+                        .sftp_transfers
+                        .iter_mut()
+                        .find(|transfer| transfer.id == id)
+                    {
+                        if transfer.status == SftpTransferStatus::Paused {
+                            transfer.pause_flag.store(false, Ordering::SeqCst);
+                            transfer.pause_notify.notify_waiters();
+                            transfer.status = SftpTransferStatus::Uploading;
+                        }
+                    }
+                }
+            }
+            Message::SftpTransferRetry(id) => {
+                if let Some(transfer) = self
+                    .sftp_transfers
+                    .iter_mut()
+                    .find(|transfer| transfer.id == id)
+                {
+                    transfer.cancel_flag.store(false, Ordering::SeqCst);
+                    transfer.status = SftpTransferStatus::Queued;
+                    transfer.bytes_sent = 0;
+                    transfer.bytes_total = 0;
+                    transfer.started_at = None;
+                    transfer.last_update = None;
+                    transfer.last_bytes_sent = 0;
+                    transfer.last_rate_bps = None;
+                    transfer.cancel_flag.store(false, Ordering::SeqCst);
+                    transfer.pause_flag.store(false, Ordering::SeqCst);
+                }
+                if let Some(task) = schedule_transfer_tasks(self) {
+                    return task;
+                }
+            }
+            Message::SftpTransferClearDone => {
+                self.sftp_transfers.retain(|transfer| {
+                    !matches!(
+                        transfer.status,
+                        SftpTransferStatus::Completed
+                            | SftpTransferStatus::Failed(_)
+                            | SftpTransferStatus::Canceled
+                    )
+                });
+            }
             Message::SftpTransferUpdate(update) => {
                 let status = update.status.clone();
                 let mut should_refresh = false;
@@ -305,7 +392,14 @@ impl App {
                     if let Some(status_value) = status.clone() {
                         transfer.status = status_value;
                     }
-                    if matches!(status, Some(SftpTransferStatus::Completed))
+                    if matches!(
+                        status,
+                        Some(
+                            SftpTransferStatus::Completed
+                                | SftpTransferStatus::Canceled
+                                | SftpTransferStatus::Paused
+                        )
+                    )
                         && transfer.direction == SftpTransferDirection::Upload
                         && update.tab_index == self.active_tab
                         && self.sftp_panel_open
@@ -329,7 +423,15 @@ impl App {
                         tasks.push(task);
                     }
                 }
-                if matches!(status, Some(SftpTransferStatus::Completed | SftpTransferStatus::Failed(_)))
+                if matches!(
+                    status,
+                    Some(
+                        SftpTransferStatus::Completed
+                            | SftpTransferStatus::Failed(_)
+                            | SftpTransferStatus::Canceled
+                            | SftpTransferStatus::Paused
+                    )
+                )
                 {
                     if let Some(task) = schedule_transfer_tasks(self) {
                         tasks.push(task);
@@ -886,6 +988,9 @@ fn start_upload(app: &mut App, name: String) -> Option<Task<Message>> {
         last_update: None,
         last_bytes_sent: 0,
         last_rate_bps: None,
+        cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        pause_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        pause_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
     });
     app.sftp_remote_error = None;
 
@@ -900,6 +1005,9 @@ async fn upload_local_file(
     transfer_id: uuid::Uuid,
     tab_index: usize,
     tx: tokio::sync::mpsc::UnboundedSender<SftpTransferUpdate>,
+    cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pause_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pause_notify: std::sync::Arc<tokio::sync::Notify>,
 ) -> Result<(), String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -974,6 +1082,26 @@ async fn upload_local_file(
     let mut buffer = vec![0u8; 64 * 1024];
     let mut sent: u64 = 0;
     loop {
+        while pause_flag.load(Ordering::SeqCst) {
+            let _ = tx.send(SftpTransferUpdate {
+                id: transfer_id,
+                tab_index,
+                bytes_sent: sent,
+                bytes_total: total,
+                status: Some(SftpTransferStatus::Paused),
+            });
+            pause_notify.notified().await;
+        }
+        if cancel_flag.load(Ordering::SeqCst) {
+            let _ = tx.send(SftpTransferUpdate {
+                id: transfer_id,
+                tab_index,
+                bytes_sent: sent,
+                bytes_total: total,
+                status: Some(SftpTransferStatus::Canceled),
+            });
+            return Ok(());
+        }
         let read = local_file.read(&mut buffer).await.map_err(|e| {
             let msg = format!("Upload failed: {}", e);
             send_status(SftpTransferStatus::Failed(msg.clone()));
@@ -1047,6 +1175,9 @@ fn start_download(app: &mut App, name: String) -> Option<Task<Message>> {
         last_update: None,
         last_bytes_sent: 0,
         last_rate_bps: None,
+        cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        pause_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        pause_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
     });
     app.sftp_remote_error = None;
 
@@ -1125,6 +1256,9 @@ async fn run_transfer(
                 transfer.id,
                 transfer.tab_index,
                 tx,
+                transfer.cancel_flag,
+                transfer.pause_flag,
+                transfer.pause_notify,
             )
             .await
         }
@@ -1137,6 +1271,9 @@ async fn run_transfer(
                 transfer.id,
                 transfer.tab_index,
                 tx,
+                transfer.cancel_flag,
+                transfer.pause_flag,
+                transfer.pause_notify,
             )
             .await
         }
@@ -1151,6 +1288,9 @@ async fn download_remote_file(
     transfer_id: uuid::Uuid,
     tab_index: usize,
     tx: tokio::sync::mpsc::UnboundedSender<SftpTransferUpdate>,
+    cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pause_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pause_notify: std::sync::Arc<tokio::sync::Notify>,
 ) -> Result<(), String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -1219,6 +1359,26 @@ async fn download_remote_file(
     let mut buffer = vec![0u8; 64 * 1024];
     let mut received: u64 = 0;
     loop {
+        while pause_flag.load(Ordering::SeqCst) {
+            let _ = tx.send(SftpTransferUpdate {
+                id: transfer_id,
+                tab_index,
+                bytes_sent: received,
+                bytes_total: total,
+                status: Some(SftpTransferStatus::Paused),
+            });
+            pause_notify.notified().await;
+        }
+        if cancel_flag.load(Ordering::SeqCst) {
+            let _ = tx.send(SftpTransferUpdate {
+                id: transfer_id,
+                tab_index,
+                bytes_sent: received,
+                bytes_total: total,
+                status: Some(SftpTransferStatus::Canceled),
+            });
+            return Ok(());
+        }
         let read = remote_file.read(&mut buffer).await.map_err(|e| {
             let msg = format!("Download failed: {}", e);
             send_status(SftpTransferStatus::Failed(msg.clone()));

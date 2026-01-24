@@ -655,6 +655,29 @@ pub fn dialog_input(
     }
 }
 
+pub fn tooltip_style(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgba8(25, 25, 28, 0.96))),
+        border: Border {
+            color: Color::from_rgba8(255, 255, 255, 0.08),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),
+            offset: Vector::new(0.0, 4.0),
+            blur_radius: 12.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn tooltip_text(_theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(Color::from_rgb8(245, 245, 247)),
+    }
+}
+
 pub fn ime_input(
     _theme: &Theme,
     _status: iced::widget::text_input::Status,

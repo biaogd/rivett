@@ -3,6 +3,8 @@ use crate::terminal::{TerminalDamage, TerminalEmulator};
 use iced::widget::canvas::Cache;
 use iced::Point;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use tokio::sync::Notify;
 use std::sync::mpsc;
 use tokio::sync::Mutex;
 use russh_sftp::client::SftpSession;
@@ -76,6 +78,8 @@ pub enum SftpTransferStatus {
     Uploading,
     Completed,
     Failed(String),
+    Canceled,
+    Paused,
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +97,9 @@ pub struct SftpTransfer {
     pub last_update: Option<std::time::Instant>,
     pub last_bytes_sent: u64,
     pub last_rate_bps: Option<u64>,
+    pub cancel_flag: Arc<AtomicBool>,
+    pub pause_flag: Arc<AtomicBool>,
+    pub pause_notify: Arc<Notify>,
 }
 
 #[derive(Debug, Clone)]

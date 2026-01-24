@@ -2,6 +2,7 @@ use crate::terminal::TerminalDamage;
 use crate::ui::state::{SftpContextAction, SftpPane, SftpTransferUpdate};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActiveView {
@@ -34,6 +35,11 @@ pub enum Message {
     SftpCloseContextMenu,
     SftpContextAction(SftpPane, String, SftpContextAction),
     SftpTransferUpdate(SftpTransferUpdate),
+    SftpTransferCancel(Uuid),
+    SftpTransferRetry(Uuid),
+    SftpTransferClearDone,
+    SftpTransferPause(Uuid),
+    SftpTransferResume(Uuid),
     SftpLocalEntryPressed(String, bool),
     SftpRemoteEntryPressed(String, bool),
     ShowPortForwarding,

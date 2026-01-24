@@ -1,5 +1,5 @@
 use iced::widget::{
-    button, column, container, progress_bar, row, scrollable, svg, text, text_input, Id,
+    button, column, container, progress_bar, row, scrollable, svg, text, text_input, tooltip, Id,
 };
 use iced::widget::text::Wrapping;
 use iced::{Alignment, Element, Length, Padding};
@@ -289,7 +289,7 @@ pub fn render<'a>(
         .height(Length::Fill);
 
     let queue_content_width = (panel_width - 24.0).max(200.0);
-    let transfer_name_width = (queue_content_width * 0.36).max(140.0);
+    let transfer_name_width = (queue_content_width * (3.6 / 11.0)).max(140.0);
 
     let mut queue_rows = column![];
     for transfer in transfers
@@ -300,7 +300,7 @@ pub fn render<'a>(
     {
         let (status, progress) = transfer_status(transfer);
         queue_rows = queue_rows.push(transfer_row(
-            transfer.name.clone(),
+            transfer,
             status,
             progress,
             transfer_name_width,
@@ -317,7 +317,15 @@ pub fn render<'a>(
     let queue_rows = queue_rows.spacing(8);
 
     let queue = column![
-        text("Transfers").size(12).style(ui_style::muted_text),
+        row![
+            text("Transfers").size(12).style(ui_style::muted_text),
+            container("").width(Length::Fill),
+            button(text("Clear").size(12))
+                .padding([2, 6])
+                .style(ui_style::icon_button)
+                .on_press(Message::SftpTransferClearDone),
+        ]
+        .align_y(Alignment::Center),
         container(
             scrollable(queue_rows)
                 .direction(ui_style::thin_scrollbar())
@@ -428,7 +436,7 @@ pub fn render<'a>(
 }
 
 fn transfer_row(
-    name: String,
+    transfer: &SftpTransfer,
     status: String,
     progress: f32,
     name_width: f32,
@@ -437,19 +445,78 @@ fn transfer_row(
         .height(Length::Fixed(6.0))
         .width(Length::Fill);
 
-    let display_name = truncate_name(&name, name_width, 12.0);
+    let display_name = truncate_name(&transfer.name, name_width, 13.0);
+    let action_cell: Element<'static, Message> = match &transfer.status {
+        SftpTransferStatus::Uploading => row![
+            action_button(
+                "Pause",
+                icon_svg(PAUSE_SVG),
+                Message::SftpTransferPause(transfer.id),
+            ),
+            action_button(
+                "Cancel",
+                icon_svg(CANCEL_SVG),
+                Message::SftpTransferCancel(transfer.id),
+            ),
+        ]
+        .spacing(4)
+        .into(),
+        SftpTransferStatus::Paused => row![
+            action_button(
+                "Resume",
+                icon_svg(RESUME_SVG),
+                Message::SftpTransferResume(transfer.id),
+            ),
+            action_button(
+                "Cancel",
+                icon_svg(CANCEL_SVG),
+                Message::SftpTransferCancel(transfer.id),
+            ),
+        ]
+        .spacing(4)
+        .into(),
+        SftpTransferStatus::Queued => action_button(
+            "Cancel",
+            icon_svg(CANCEL_SVG),
+            Message::SftpTransferCancel(transfer.id),
+        ),
+        SftpTransferStatus::Failed(_) | SftpTransferStatus::Canceled => action_button(
+            "Retry",
+            icon_svg(RETRY_SVG),
+            Message::SftpTransferRetry(transfer.id),
+        ),
+        _ => container("").into(),
+    };
+
+    let status_icon = match &transfer.status {
+        SftpTransferStatus::Queued => icon_svg(QUEUED_SVG),
+        SftpTransferStatus::Uploading => icon_svg(UPLOADING_SVG),
+        SftpTransferStatus::Paused => icon_svg(PAUSED_SVG),
+        SftpTransferStatus::Completed => icon_svg(CHECK_SVG),
+        SftpTransferStatus::Failed(_) => icon_svg(ERROR_SVG),
+        SftpTransferStatus::Canceled => icon_svg(CANCEL_STATUS_SVG),
+    };
+
     container(
         row![
             text(display_name)
-                .size(12)
+                .size(13)
                 .wrapping(Wrapping::None)
                 .width(Length::FillPortion(3)),
             progress_bar.width(Length::FillPortion(5)),
-            text(status)
-                .size(12)
-                .style(ui_style::muted_text)
-                .wrapping(Wrapping::None)
-                .width(Length::FillPortion(2)),
+            row![
+                status_icon,
+                text(status)
+                    .size(13)
+                    .style(ui_style::muted_text)
+                    .wrapping(Wrapping::None),
+            ]
+            .align_y(Alignment::Center)
+            .spacing(4)
+            .width(Length::FillPortion(2)),
+            container(action_cell)
+                .width(Length::FillPortion(1))
+                .center_x(Length::Fill),
         ]
         .align_y(Alignment::Center)
         .spacing(6),
@@ -476,10 +543,33 @@ fn transfer_status(transfer: &SftpTransfer) -> (String, f32) {
                 format!("{} · {}", direction, rate)
             }
         }
+        SftpTransferStatus::Paused => format!("Paused · {}", rate),
         SftpTransferStatus::Completed => format!("{} completed", direction),
         SftpTransferStatus::Failed(_) => format!("{} failed", direction),
+        SftpTransferStatus::Canceled => format!("{} canceled", direction),
     };
     (status, progress)
+}
+
+fn action_button(
+    label: &'static str,
+    icon: Element<'static, Message>,
+    message: Message,
+) -> Element<'static, Message> {
+    let tip = container(text(label).size(11).style(ui_style::tooltip_text))
+        .padding([4, 8]);
+
+    tooltip(
+        button(icon.map(|_| Message::Ignore))
+            .padding([2, 6])
+            .style(ui_style::icon_button)
+            .on_press(message),
+        tip,
+        tooltip::Position::Top,
+    )
+    .style(ui_style::tooltip_style)
+    .gap(6)
+    .into()
 }
 
 fn transfer_rate(transfer: &SftpTransfer) -> String {
@@ -519,11 +609,11 @@ fn file_icon(name: &str, is_dir: bool) -> (fn(&iced::Theme) -> iced::widget::tex
 
 fn icon_svg(data: &str) -> Element<'static, Message> {
     let handle = svg::Handle::from_memory(data.as_bytes().to_vec());
-    container(svg(handle).width(Length::Fixed(14.0)).height(Length::Fixed(14.0)))
-        .width(Length::Fixed(18.0))
-        .height(Length::Fixed(16.0))
-        .center_x(Length::Fixed(18.0))
-        .center_y(Length::Fixed(16.0))
+    container(svg(handle).width(Length::Fixed(18.0)).height(Length::Fixed(18.0)))
+        .width(Length::Fixed(22.0))
+        .height(Length::Fixed(20.0))
+        .center_x(Length::Fixed(22.0))
+        .center_y(Length::Fixed(20.0))
         .into()
 }
 
@@ -565,6 +655,17 @@ const FOLDER_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fi
 const IMAGE_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="5" width="16" height="14" rx="2" stroke="#AF52DE" stroke-width="1.6"/><path d="M8 13l3-3 5 6" stroke="#AF52DE" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="9" r="1.5" fill="#AF52DE"/></svg>"###;
 const ARCHIVE_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="3" width="12" height="4" stroke="#FF9F0A" stroke-width="1.6"/><rect x="6" y="7" width="12" height="14" rx="2" stroke="#FF9F0A" stroke-width="1.6"/><path d="M12 10v8" stroke="#FF9F0A" stroke-width="1.6"/><path d="M10 12h4" stroke="#FF9F0A" stroke-width="1.6"/></svg>"###;
 const EXEC_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="16" height="16" rx="3" stroke="#34C759" stroke-width="1.6"/><path d="M9 8l6 4-6 4V8Z" fill="#34C759"/></svg>"###;
+
+const CHECK_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#34C759" stroke-width="2.0"/><path d="M8.2 12.2l2.4 2.5 5.2-5.4" stroke="#34C759" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/></svg>"###;
+const ERROR_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#FF453A" stroke-width="2.0"/><path d="M12 7.2v6.4" stroke="#FF453A" stroke-width="2.0" stroke-linecap="round"/><circle cx="12" cy="16.8" r="1.2" fill="#FF453A"/></svg>"###;
+const UPLOADING_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#0A84FF" stroke-width="2.0"/><path d="M12 7.5v9" stroke="#0A84FF" stroke-width="2.0" stroke-linecap="round"/><path d="M9 10.5L12 7.5l3 3" stroke="#0A84FF" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/></svg>"###;
+const QUEUED_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#8E8E93" stroke-width="2.0"/><path d="M12 7.5v5.3l3.8 2.2" stroke="#8E8E93" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/></svg>"###;
+const CANCEL_STATUS_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#FF9F0A" stroke-width="2.0"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7" stroke="#FF9F0A" stroke-width="2.0" stroke-linecap="round"/></svg>"###;
+const CANCEL_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7l-10 10" stroke="#FF453A" stroke-width="2.0" stroke-linecap="round"/></svg>"###;
+const RETRY_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20 12a8 8 0 1 1-2.3-5.7" stroke="#0A84FF" stroke-width="2.0" stroke-linecap="round"/><path d="M20 4v6h-6" stroke="#0A84FF" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/></svg>"###;
+const PAUSED_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#FF9F0A" stroke-width="2.0"/><path d="M9.5 8.5v7" stroke="#FF9F0A" stroke-width="2.0" stroke-linecap="round"/><path d="M14.5 8.5v7" stroke="#FF9F0A" stroke-width="2.0" stroke-linecap="round"/></svg>"###;
+const PAUSE_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 7.5v9M15 7.5v9" stroke="#FF9F0A" stroke-width="2.0" stroke-linecap="round"/></svg>"###;
+const RESUME_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 7.5l7 4.5-7 4.5V7.5Z" fill="#34C759"/></svg>"###;
 
 fn file_row(
     name: String,
