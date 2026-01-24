@@ -8,7 +8,7 @@ use crate::settings::{AppSettings, SettingsStorage};
 use crate::session::{SessionConfig, SessionStorage};
 use super::message::{ActiveView, Message};
 use super::state::{
-    ConnectionTestStatus, SessionTab, SftpContextMenu, SftpEntry, SftpTransfer,
+    ConnectionTestStatus, SessionTab, SftpContextMenu, SftpEntry, SftpPendingAction, SftpTransfer,
     SftpTransferUpdate,
 };
 
@@ -80,6 +80,10 @@ pub struct App {
     pub(in crate::ui) sftp_transfer_rx:
         Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<SftpTransferUpdate>>>,
     pub(in crate::ui) sftp_max_concurrent: usize,
+    pub(in crate::ui) sftp_rename_input_id: iced::widget::Id,
+    pub(in crate::ui) sftp_rename_target: Option<SftpPendingAction>,
+    pub(in crate::ui) sftp_rename_value: String,
+    pub(in crate::ui) sftp_delete_target: Option<SftpPendingAction>,
 }
 
 impl App {
@@ -163,6 +167,10 @@ impl App {
                 sftp_transfer_tx,
                 sftp_transfer_rx: Arc::new(Mutex::new(sftp_transfer_rx)),
                 sftp_max_concurrent: 2,
+                sftp_rename_input_id: iced::widget::Id::new("sftp-rename-input"),
+                sftp_rename_target: None,
+                sftp_rename_value: String::new(),
+                sftp_delete_target: None,
             },
             open_task.map(Message::WindowOpened), // Open the main window
         )

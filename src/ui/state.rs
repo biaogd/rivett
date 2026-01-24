@@ -118,6 +118,13 @@ pub enum SftpPane {
 }
 
 #[derive(Debug, Clone)]
+pub struct SftpPendingAction {
+    pub pane: SftpPane,
+    pub name: String,
+    pub is_dir: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct SftpContextMenu {
     pub pane: SftpPane,
     pub name: String,

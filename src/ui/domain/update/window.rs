@@ -46,6 +46,17 @@ pub(in crate::ui) fn handle_runtime_event(
     window: iced::window::Id,
 ) -> Option<Task<Message>> {
     if Some(window) == app.main_window {
+        if app.sftp_panel_open && app.sftp_rename_target.is_some() {
+            if let iced::event::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) =
+                event
+            {
+                if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape))
+                {
+                    return Some(Task::done(Message::SftpRenameCancel));
+                }
+            }
+        }
+
         match event {
             iced::event::Event::Window(iced::window::Event::Focused) => {
                 app.ime_focused = false;

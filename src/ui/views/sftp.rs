@@ -28,6 +28,9 @@ pub fn render<'a>(
     panel_height: f32,
     transfers: &'a [SftpTransfer],
     active_tab: usize,
+    rename_input_id: &'a Id,
+    rename_target: Option<&'a crate::ui::state::SftpPendingAction>,
+    rename_value: &'a str,
 ) -> Element<'a, Message> {
     let list_padding_left = 14;
     let list_padding_right = 6;
@@ -118,6 +121,9 @@ pub fn render<'a>(
                 name_column_width,
                 SftpPane::Local,
                 context_menu,
+                rename_input_id,
+                rename_target,
+                rename_value,
             ));
         }
 
@@ -186,6 +192,9 @@ pub fn render<'a>(
                 name_column_width,
                 SftpPane::Remote,
                 context_menu,
+                rename_input_id,
+                rename_target,
+                rename_value,
             ));
         }
         scrollable(rows.spacing(2))
@@ -435,6 +444,40 @@ pub fn render<'a>(
     iced::widget::stack![base, overlay].into()
 }
 
+pub fn delete_dialog<'a>(name: &'a str, is_dir: bool) -> Element<'a, Message> {
+    let title = text("Delete").size(16).style(ui_style::header_text);
+    let message = if is_dir {
+        format!("Delete folder \"{}\"?", name)
+    } else {
+        format!("Delete file \"{}\"?", name)
+    };
+
+    let hint = text(message).size(13).style(ui_style::muted_text);
+
+    let actions = row![
+        container("").width(Length::Fill),
+        button(text("Cancel").size(12))
+            .padding([6, 12])
+            .style(ui_style::secondary_button_style)
+            .on_press(Message::SftpDeleteCancel),
+        button(text("Delete").size(12))
+            .padding([6, 12])
+            .style(ui_style::destructive_button_style)
+            .on_press(Message::SftpDeleteConfirm),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    container(
+        column![title, hint, actions]
+            .spacing(12)
+            .width(Length::Fixed(360.0)),
+    )
+    .padding(16)
+    .style(ui_style::dialog_container)
+    .into()
+}
+
 fn transfer_row(
     transfer: &SftpTransfer,
     status: String,
@@ -677,18 +720,38 @@ fn file_row(
     name_column_width: f32,
     pane: SftpPane,
     context_menu: Option<&SftpContextMenu>,
+    rename_input_id: &Id,
+    rename_target: Option<&crate::ui::state::SftpPendingAction>,
+    rename_value: &str,
 ) -> Element<'static, Message> {
     let (name_style, icon) = file_icon(&name, is_dir);
+    let is_renaming = rename_target
+        .map(|target| target.pane == pane && target.name == name)
+        .unwrap_or(false);
 
     let display_name = truncate_name(&name, name_column_width, 14.0);
+    let name_cell: Element<'static, Message> = if is_renaming {
+        text_input("New name", rename_value)
+            .on_input(Message::SftpRenameInput)
+            .on_submit(Message::SftpRenameConfirm)
+            .id(rename_input_id.clone())
+            .padding([4, 8])
+            .size(13)
+            .style(ui_style::dialog_input)
+            .width(Length::Fixed(name_column_width))
+            .into()
+    } else {
+        text(display_name)
+            .size(14)
+            .style(name_style)
+            .width(Length::Fixed(name_column_width))
+            .wrapping(Wrapping::None)
+            .into()
+    };
     let row_button = button(
         row![
             icon,
-            text(display_name)
-                .size(14)
-                .style(name_style)
-                .width(Length::Fixed(name_column_width))
-                .wrapping(Wrapping::None),
+            name_cell,
             text(size)
                 .size(12)
                 .style(ui_style::muted_text)
@@ -705,7 +768,7 @@ fn file_row(
     .padding(pad_trbl(2, 6, 2, 10))
     .width(Length::Fill)
     .style(ui_style::sftp_row_button(selected))
-    .on_press(on_press);
+    .on_press(if is_renaming { Message::Ignore } else { on_press });
 
     let row_area = iced::widget::mouse_area(row_button)
         .on_right_press(Message::SftpOpenContextMenu(pane, name.clone()))

@@ -187,6 +187,10 @@ impl App {
                 self.sftp_panel_cursor = Some(point);
             }
             Message::SftpLocalEntryPressed(name, is_dir) => {
+                if self.sftp_rename_target.is_some() {
+                    self.sftp_rename_target = None;
+                    self.sftp_rename_value.clear();
+                }
                 let now = Instant::now();
                 let is_double = self
                     .sftp_local_last_click
@@ -220,6 +224,10 @@ impl App {
                 }
             }
             Message::SftpRemoteEntryPressed(name, is_dir) => {
+                if self.sftp_rename_target.is_some() {
+                    self.sftp_rename_target = None;
+                    self.sftp_rename_value.clear();
+                }
                 let now = Instant::now();
                 let is_double = self
                     .sftp_remote_last_click
@@ -261,6 +269,10 @@ impl App {
             }
             Message::SftpCloseContextMenu => {
                 self.sftp_context_menu = None;
+                if self.sftp_rename_target.is_some() {
+                    self.sftp_rename_target = None;
+                    self.sftp_rename_value.clear();
+                }
             }
             Message::SftpContextAction(pane, name, action) => {
                 self.sftp_context_menu = None;
@@ -270,9 +282,53 @@ impl App {
                     }
                 }
                 if pane == SftpPane::Remote && action == SftpContextAction::Download {
-                    if let Some(task) = start_download(self, name) {
+                    if let Some(task) = start_download(self, name.clone()) {
                         return task;
                     }
+                }
+                if action == SftpContextAction::Rename {
+                    let is_dir = match pane {
+                        SftpPane::Local => self
+                            .sftp_local_entries
+                            .iter()
+                            .find(|entry| entry.name == name)
+                            .map(|entry| entry.is_dir)
+                            .unwrap_or(false),
+                        SftpPane::Remote => self
+                            .sftp_remote_entries
+                            .iter()
+                            .find(|entry| entry.name == name)
+                            .map(|entry| entry.is_dir)
+                            .unwrap_or(false),
+                    };
+                    self.sftp_rename_target = Some(crate::ui::state::SftpPendingAction {
+                        pane,
+                        name: name.clone(),
+                        is_dir,
+                    });
+                    self.sftp_rename_value = name.clone();
+                    return iced::widget::operation::focus(self.sftp_rename_input_id.clone());
+                }
+                if action == SftpContextAction::Delete {
+                    let is_dir = match pane {
+                        SftpPane::Local => self
+                            .sftp_local_entries
+                            .iter()
+                            .find(|entry| entry.name == name)
+                            .map(|entry| entry.is_dir)
+                            .unwrap_or(false),
+                        SftpPane::Remote => self
+                            .sftp_remote_entries
+                            .iter()
+                            .find(|entry| entry.name == name)
+                            .map(|entry| entry.is_dir)
+                            .unwrap_or(false),
+                    };
+                    self.sftp_delete_target = Some(crate::ui::state::SftpPendingAction {
+                        pane,
+                        name,
+                        is_dir,
+                    });
                 }
             }
             Message::SftpTransferCancel(id) => {
@@ -360,6 +416,99 @@ impl App {
                             | SftpTransferStatus::Canceled
                     )
                 });
+            }
+            Message::SftpRenameStart(pane, name, is_dir) => {
+                self.sftp_rename_target = Some(crate::ui::state::SftpPendingAction {
+                    pane,
+                    name: name.clone(),
+                    is_dir,
+                });
+                self.sftp_rename_value = name;
+                return iced::widget::operation::focus(self.sftp_rename_input_id.clone());
+            }
+            Message::SftpRenameInput(value) => {
+                self.sftp_rename_value = value;
+            }
+            Message::SftpRenameCancel => {
+                self.sftp_rename_target = None;
+                self.sftp_rename_value.clear();
+            }
+            Message::SftpRenameConfirm => {
+                if let Some(task) = start_rename(self) {
+                    return task;
+                }
+            }
+            Message::SftpRenameFinished(tab_index, result) => {
+                if tab_index != self.active_tab {
+                    return Task::none();
+                }
+                let target = self.sftp_rename_target.clone();
+                self.sftp_rename_target = None;
+                self.sftp_rename_value.clear();
+                match result {
+                    Ok(()) => {
+                        if let Some(target) = target {
+                            return match target.pane {
+                                SftpPane::Local => Task::done(Message::SftpLocalPathChanged(
+                                    self.sftp_local_path.clone(),
+                                )),
+                                SftpPane::Remote => {
+                                    if let Some(task) = start_remote_list(self, self.active_tab) {
+                                        task
+                                    } else {
+                                        Task::none()
+                                    }
+                                }
+                            };
+                        }
+                    }
+                    Err(err) => {
+                        self.sftp_remote_error = Some(err);
+                    }
+                }
+            }
+            Message::SftpDeleteStart(pane, name, is_dir) => {
+                self.sftp_delete_target = Some(crate::ui::state::SftpPendingAction {
+                    pane,
+                    name,
+                    is_dir,
+                });
+            }
+            Message::SftpDeleteCancel => {
+                self.sftp_delete_target = None;
+            }
+            Message::SftpDeleteConfirm => {
+                if let Some(task) = start_delete(self) {
+                    return task;
+                }
+            }
+            Message::SftpDeleteFinished(tab_index, result) => {
+                if tab_index != self.active_tab {
+                    return Task::none();
+                }
+                let target = self.sftp_delete_target.clone();
+                self.sftp_delete_target = None;
+                match result {
+                    Ok(()) => {
+                        if let Some(target) = target {
+                            return match target.pane {
+                                SftpPane::Local => Task::done(Message::SftpLocalPathChanged(
+                                    self.sftp_local_path.clone(),
+                                )),
+                                SftpPane::Remote => {
+                                    if let Some(task) = start_remote_list(self, self.active_tab) {
+                                        task
+                                    } else {
+                                        Task::none()
+                                    }
+                                }
+                            };
+                        }
+                    }
+                    Err(err) => {
+                        self.sftp_remote_error = Some(err);
+                    }
+                }
             }
             Message::SftpTransferUpdate(update) => {
                 let status = update.status.clone();
@@ -1182,6 +1331,129 @@ fn start_download(app: &mut App, name: String) -> Option<Task<Message>> {
     app.sftp_remote_error = None;
 
     schedule_transfer_tasks(app)
+}
+
+fn start_rename(app: &mut App) -> Option<Task<Message>> {
+    let target = app.sftp_rename_target.clone()?;
+    let new_name = app.sftp_rename_value.trim().to_string();
+    if new_name.is_empty() || new_name == target.name {
+        app.sftp_rename_target = None;
+        app.sftp_rename_value.clear();
+        return None;
+    }
+
+    let tab_index = app.active_tab;
+    match target.pane {
+        SftpPane::Local => {
+            let old_path = join_local_path(&app.sftp_local_path, &target.name);
+            let new_path = join_local_path(&app.sftp_local_path, &new_name);
+            Some(Task::perform(
+                async move {
+                    tokio::fs::rename(old_path, new_path)
+                        .await
+                        .map_err(|e| format!("Rename failed: {}", e))
+                },
+                move |result| Message::SftpRenameFinished(tab_index, result),
+            ))
+        }
+        SftpPane::Remote => {
+            let tab = app.tabs.get(tab_index)?;
+            let session = match &tab.session {
+                Some(session) => session.clone(),
+                None => return None,
+            };
+            let sftp_session = tab.sftp_session.clone();
+            let old_path = join_remote_path(&app.sftp_remote_path, &target.name);
+            let new_path = join_remote_path(&app.sftp_remote_path, &new_name);
+            Some(Task::perform(
+                async move {
+                    let mut guard = sftp_session.lock().await;
+                    if guard.is_none() {
+                        let ssh = match session.backend.as_ref() {
+                            crate::core::backend::SessionBackend::Ssh { session, .. } => {
+                                session.clone()
+                            }
+                            _ => return Err("No SSH session".to_string()),
+                        };
+                        let mut ssh_guard = ssh.lock().await;
+                        let created = ssh_guard
+                            .open_sftp()
+                            .await
+                            .map_err(|e| format!("SFTP init failed: {}", e))?;
+                        *guard = Some(created);
+                    }
+                    let sftp = guard.as_ref().ok_or_else(|| "SFTP not available".to_string())?;
+                    sftp.rename(old_path, new_path)
+                        .await
+                        .map_err(|e| format!("Rename failed: {}", e))
+                },
+                move |result| Message::SftpRenameFinished(tab_index, result),
+            ))
+        }
+    }
+}
+
+fn start_delete(app: &mut App) -> Option<Task<Message>> {
+    let target = app.sftp_delete_target.clone()?;
+    let tab_index = app.active_tab;
+    match target.pane {
+        SftpPane::Local => {
+            let path = join_local_path(&app.sftp_local_path, &target.name);
+            Some(Task::perform(
+                async move {
+                    if target.is_dir {
+                        tokio::fs::remove_dir_all(path)
+                            .await
+                            .map_err(|e| format!("Delete failed: {}", e))
+                    } else {
+                        tokio::fs::remove_file(path)
+                            .await
+                            .map_err(|e| format!("Delete failed: {}", e))
+                    }
+                },
+                move |result| Message::SftpDeleteFinished(tab_index, result),
+            ))
+        }
+        SftpPane::Remote => {
+            let tab = app.tabs.get(tab_index)?;
+            let session = match &tab.session {
+                Some(session) => session.clone(),
+                None => return None,
+            };
+            let sftp_session = tab.sftp_session.clone();
+            let path = join_remote_path(&app.sftp_remote_path, &target.name);
+            Some(Task::perform(
+                async move {
+                    let mut guard = sftp_session.lock().await;
+                    if guard.is_none() {
+                        let ssh = match session.backend.as_ref() {
+                            crate::core::backend::SessionBackend::Ssh { session, .. } => {
+                                session.clone()
+                            }
+                            _ => return Err("No SSH session".to_string()),
+                        };
+                        let mut ssh_guard = ssh.lock().await;
+                        let created = ssh_guard
+                            .open_sftp()
+                            .await
+                            .map_err(|e| format!("SFTP init failed: {}", e))?;
+                        *guard = Some(created);
+                    }
+                    let sftp = guard.as_ref().ok_or_else(|| "SFTP not available".to_string())?;
+                    if target.is_dir {
+                        sftp.remove_dir(path)
+                            .await
+                            .map_err(|e| format!("Delete failed: {}", e))
+                    } else {
+                        sftp.remove_file(path)
+                            .await
+                            .map_err(|e| format!("Delete failed: {}", e))
+                    }
+                },
+                move |result| Message::SftpDeleteFinished(tab_index, result),
+            ))
+        }
+    }
 }
 
 fn schedule_transfer_tasks(app: &mut App) -> Option<Task<Message>> {

@@ -130,6 +130,9 @@ impl App {
                 self.window_height as f32,
                 &self.sftp_transfers,
                 self.active_tab,
+                &self.sftp_rename_input_id,
+                self.sftp_rename_target.as_ref(),
+                &self.sftp_rename_value,
             ))
             .padding(12)
             .width(Length::Fill)
@@ -202,6 +205,36 @@ impl App {
             main_view
         };
 
+        let view_with_sftp_dialog = if self.sftp_delete_target.is_some() {
+            let dialog_content = if let Some(target) = &self.sftp_delete_target {
+                views::sftp::delete_dialog(&target.name, target.is_dir)
+            } else {
+                container(Space::new()).into()
+            };
+
+            let backdrop = button(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(ui_style::modal_backdrop)
+            .on_press(Message::SftpDeleteCancel);
+
+            let dialog = container(
+                iced::widget::mouse_area(dialog_content).on_press(Message::Ignore),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
+
+            stack![view_with_quick_connect, backdrop, dialog].into()
+        } else {
+            view_with_quick_connect
+        };
+
         // Session Dialog overlay (on top of everything)
         if self.active_view == ActiveView::SessionManager && self.editing_session.is_some() {
             // Dark semi-transparent backdrop
@@ -241,9 +274,9 @@ impl App {
             .center_x(Length::Fill)
             .center_y(Length::Fill);
 
-            stack![view_with_quick_connect, backdrop, dialog].into()
+            stack![view_with_sftp_dialog, backdrop, dialog].into()
         } else {
-            view_with_quick_connect
+            view_with_sftp_dialog
         }
     }
 

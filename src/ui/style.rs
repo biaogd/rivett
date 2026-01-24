@@ -111,6 +111,23 @@ pub fn secondary_button_style(_theme: &Theme, status: button::Status) -> button:
     }
 }
 
+pub fn destructive_button_style(_theme: &Theme, status: button::Status) -> button::Style {
+    let background = match status {
+        button::Status::Hovered => Color::from_rgb8(236, 86, 80),
+        _ => Color::from_rgb8(246, 96, 90),
+    };
+
+    button::Style {
+        background: Some(Background::Color(background)),
+        text_color: Color::WHITE,
+        border: Border {
+            radius: 8.0.into(),
+            ..Default::default()
+        },
+        ..button::Style::default()
+    }
+}
+
 pub fn divider(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(color_border())),
