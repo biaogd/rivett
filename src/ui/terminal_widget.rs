@@ -231,6 +231,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
 
         let cell_width = cell_width(self.font_size);
         let cell_height = cell_height(self.font_size);
+        let terminal_font_family = crate::platform::default_terminal_font_family();
         let (cursor_col, cursor_row) = self.emulator.cursor_position();
         let preedit_len = self.preedit.map(|s| s.chars().count()).unwrap_or(0);
         let (_, _, screen_lines) = self.emulator.get_scroll_state();
@@ -290,7 +291,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                                 color: current_fg,
                                 size: self.font_size.into(),
                                 font: iced::Font {
-                                    family: iced::font::Family::Name("Monaco"),
+                                    family: iced::font::Family::Name(terminal_font_family),
                                     ..iced::Font::DEFAULT
                                 },
                                 ..Text::default()
@@ -323,7 +324,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         color: current_fg,
                         size: self.font_size.into(),
                         font: iced::Font {
-                            family: iced::font::Family::Name("Monaco"),
+                            family: iced::font::Family::Name(terminal_font_family),
                             ..iced::Font::DEFAULT
                         },
                         ..Text::default()
@@ -354,7 +355,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                     color: Color::from_rgb8(30, 64, 175),
                     size: self.font_size.into(),
                     font: iced::Font {
-                        family: iced::font::Family::Name("Monaco"),
+                        family: iced::font::Family::Name(terminal_font_family),
                         ..iced::Font::DEFAULT
                     },
                     ..Text::default()

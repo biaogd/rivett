@@ -30,3 +30,22 @@ pub fn take_settings_request() -> bool {
         false
     }
 }
+
+pub fn default_terminal_font_family() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Menlo"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "DejaVu Sans Mono"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "Consolas"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        "monospace"
+    }
+}
