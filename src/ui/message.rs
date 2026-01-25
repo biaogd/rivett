@@ -21,9 +21,13 @@ pub enum Message {
     // Menu actions
     ShowSessionManager,
     ToggleSftpPanel,
-    SftpDragStart,
-    SftpDragEnd,
-    SftpDragMove(iced::Point),
+    SftpDragStart,                             // Window resize drag
+    SftpDragEnd,                               // Window resize drag end
+    SftpDragMove(iced::Point),                 // Window resize drag move
+    SftpFileDragStart(SftpPane, String),       // Internal file drag start
+    SftpFileDragUpdate(iced::Point),           // Internal file drag update
+    SftpFileDragEnd,                           // Internal file drag end
+    SftpFileHover(Option<(SftpPane, String)>), // Hover state
     SftpLocalPathChanged(String),
     SftpRemotePathChanged(String),
     SftpRemoteLoaded(

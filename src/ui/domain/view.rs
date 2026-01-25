@@ -1,9 +1,9 @@
 use iced::{Alignment, Element, Length};
 
-use crate::ui::message::{ActiveView, Message};
-use crate::ui::{components, views};
-use crate::ui::style as ui_style;
 use crate::ui::App;
+use crate::ui::message::{ActiveView, Message};
+use crate::ui::style as ui_style;
+use crate::ui::{components, views};
 
 impl App {
     pub fn view(&self, _window: iced::window::Id) -> Element<'_, Message> {
@@ -68,10 +68,7 @@ impl App {
         let mut main_layout = column![];
 
         // Tab bar at the top (only in terminal view)
-        main_layout = main_layout.push(views::tab_bar::render(
-            &self.tabs,
-            self.active_tab,
-        ));
+        main_layout = main_layout.push(views::tab_bar::render(&self.tabs, self.active_tab));
 
         // Main content
         main_layout = main_layout.push(content);
@@ -106,13 +103,11 @@ impl App {
         };
 
         let main_view: Element<'_, Message> = if self.sftp_panel_open {
-            let sftp_state = self
-                .sftp_state_for_tab(self.active_tab)
-                .unwrap_or_else(|| {
-                    self.sftp_states
-                        .get("session-manager")
-                        .expect("missing sftp state")
-                });
+            let sftp_state = self.sftp_state_for_tab(self.active_tab).unwrap_or_else(|| {
+                self.sftp_states
+                    .get("session-manager")
+                    .expect("missing sftp state")
+            });
             let handle = iced::widget::mouse_area(
                 container(Space::new())
                     .width(Length::Fixed(10.0))
@@ -139,6 +134,7 @@ impl App {
                 &self.sftp_rename_input_id,
                 sftp_state.rename_target.as_ref(),
                 &sftp_state.rename_value,
+                self.sftp_hovered_file.as_ref(),
             ))
             .padding(12)
             .width(Length::Fill)
@@ -211,13 +207,11 @@ impl App {
             main_view
         };
 
-        let sftp_state = self
-            .sftp_state_for_tab(self.active_tab)
-            .unwrap_or_else(|| {
-                self.sftp_states
-                    .get("session-manager")
-                    .expect("missing sftp state")
-            });
+        let sftp_state = self.sftp_state_for_tab(self.active_tab).unwrap_or_else(|| {
+            self.sftp_states
+                .get("session-manager")
+                .expect("missing sftp state")
+        });
 
         let view_with_sftp_dialog = if sftp_state.delete_target.is_some() {
             let dialog_content = if let Some(target) = &sftp_state.delete_target {
@@ -236,13 +230,12 @@ impl App {
             .style(ui_style::modal_backdrop)
             .on_press(Message::SftpDeleteCancel);
 
-            let dialog = container(
-                iced::widget::mouse_area(dialog_content).on_press(Message::Ignore),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill);
+            let dialog =
+                container(iced::widget::mouse_area(dialog_content).on_press(Message::Ignore))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill);
 
             stack![view_with_quick_connect, backdrop, dialog].into()
         } else {
@@ -250,50 +243,82 @@ impl App {
         };
 
         // Session Dialog overlay (on top of everything)
-        if self.active_view == ActiveView::SessionManager && self.editing_session.is_some() {
-            // Dark semi-transparent backdrop
-            let backdrop = button(
-                container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(ui_style::modal_backdrop)
-            .on_press(Message::CancelSessionEdit);
+        let root: Element<'_, Message> =
+            if self.active_view == ActiveView::SessionManager && self.editing_session.is_some() {
+                // Dark semi-transparent backdrop
+                let backdrop = button(
+                    container(Space::new())
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(ui_style::modal_backdrop)
+                .on_press(Message::CancelSessionEdit);
 
-            // Centered dialog wrapped in mouse_area to capture clicks
-            let dialog_content = components::session_dialog::render(
-                self.editing_session.as_ref(),
-                &self.saved_sessions,
-                &self.form_name,
-                &self.form_host,
-                &self.form_port,
-                &self.form_username,
-                &self.form_password,
-                &self.form_key_path,
-                &self.form_key_passphrase,
-                self.auth_method_password,
-                self.show_password,
-                &self.connection_test_status,
-                self.validation_error.as_ref(),
-            );
+                // Centered dialog wrapped in mouse_area to capture clicks
+                let dialog_content = components::session_dialog::render(
+                    self.editing_session.as_ref(),
+                    &self.saved_sessions,
+                    &self.form_name,
+                    &self.form_host,
+                    &self.form_port,
+                    &self.form_username,
+                    &self.form_password,
+                    &self.form_key_path,
+                    &self.form_key_passphrase,
+                    self.auth_method_password,
+                    self.show_password,
+                    &self.connection_test_status,
+                    self.validation_error.as_ref(),
+                );
 
-            // Wrap in mouse_area to prevent click-through
-            let dialog = container(
-                iced::widget::mouse_area(dialog_content).on_press(Message::Ignore), // Capture clicks but do nothing
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill);
+                // Wrap in mouse_area to prevent click-through
+                let dialog = container(
+                    iced::widget::mouse_area(dialog_content).on_press(Message::Ignore), // Capture clicks but do nothing
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
 
-            stack![view_with_sftp_dialog, backdrop, dialog].into()
+                stack![view_with_sftp_dialog, backdrop, dialog].into()
+            } else {
+                view_with_sftp_dialog
+            };
+
+        let drag_layer: Element<'_, Message> = if let Some((_pane, name)) = &self.sftp_file_dragging
+        {
+            if let Some(pos) = self.sftp_drag_position {
+                // We need to import icon_svg from sftp view or make it public.
+                // It is not pub in sftp.rs. I need to make it pub.
+                // Or just use text for now.
+                // "Ghost: <name>"
+                let ghost = container(
+                    iced::widget::text(name)
+                        .size(14)
+                        .style(ui_style::header_text),
+                )
+                .padding(8)
+                .style(ui_style::popover_menu); // Reuse popover style for ghost
+
+                let layer = column![
+                    Space::new().height(Length::Fixed(pos.y)),
+                    row![
+                        Space::new().width(Length::Fixed(pos.x + 10.0)), // Offset slightly
+                        ghost
+                    ]
+                ];
+                layer.into()
+            } else {
+                Space::new().into()
+            }
         } else {
-            view_with_sftp_dialog
-        }
-    }
+            Space::new().into()
+        };
 
+        stack![root, drag_layer].into()
+    }
 }
 
 fn sftp_name_column_width(panel_width: f32) -> f32 {

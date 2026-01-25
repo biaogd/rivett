@@ -2,14 +2,12 @@ use iced::{Settings, Task, Theme};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use super::message::{ActiveView, Message};
+use super::state::{ConnectionTestStatus, SessionTab, SftpPane, SftpState, SftpTransferUpdate};
 use crate::core::SessionManager;
 use crate::platform::PlatformServices;
-use crate::settings::{AppSettings, SettingsStorage};
 use crate::session::{SessionConfig, SessionStorage};
-use super::message::{ActiveView, Message};
-use super::state::{
-    ConnectionTestStatus, SessionTab, SftpState, SftpTransferUpdate,
-};
+use crate::settings::{AppSettings, SettingsStorage};
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -62,7 +60,10 @@ pub struct App {
     pub(in crate::ui) sftp_panel_open: bool,
     pub(in crate::ui) sftp_panel_width: f32,
     pub(in crate::ui) sftp_panel_initialized: bool,
-    pub(in crate::ui) sftp_dragging: bool,
+    pub(in crate::ui) sftp_dragging: bool, // Window resizing
+    pub(in crate::ui) sftp_file_dragging: Option<(SftpPane, String)>,
+    pub(in crate::ui) sftp_drag_position: Option<iced::Point>,
+    pub(in crate::ui) sftp_hovered_file: Option<(SftpPane, String)>,
     pub(in crate::ui) sftp_transfer_tx: tokio::sync::mpsc::UnboundedSender<SftpTransferUpdate>,
     pub(in crate::ui) sftp_transfer_rx:
         Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<SftpTransferUpdate>>>,
@@ -138,6 +139,9 @@ impl App {
                 sftp_panel_width: 520.0,
                 sftp_panel_initialized: false,
                 sftp_dragging: false,
+                sftp_file_dragging: None,
+                sftp_drag_position: None,
+                sftp_hovered_file: None,
                 sftp_transfer_tx,
                 sftp_transfer_rx: Arc::new(Mutex::new(sftp_transfer_rx)),
                 sftp_max_concurrent: 2,
@@ -155,7 +159,6 @@ impl App {
             format!("SSH GUI - {}", self.tabs[self.active_tab].title)
         }
     }
-
 
     pub fn run(settings: Settings) -> iced::Result {
         iced::daemon(App::new, App::update, App::view)
@@ -186,10 +189,6 @@ impl App {
         tab_index: usize,
     ) -> Option<&mut SftpState> {
         let key = self.sftp_key_for_tab(tab_index)?.to_string();
-        Some(
-            self.sftp_states
-                .entry(key)
-                .or_insert_with(SftpState::new),
-        )
+        Some(self.sftp_states.entry(key).or_insert_with(SftpState::new))
     }
 }

@@ -1,6 +1,6 @@
+use iced::widget::scrollable;
 use iced::widget::{button, container, text};
 use iced::{Background, Border, Color, Shadow, Theme, Vector};
-use iced::widget::scrollable;
 
 // === Modern Dark Theme Color Palette ===
 
@@ -270,7 +270,6 @@ pub fn icon_button(_theme: &Theme, status: button::Status) -> button::Style {
     style
 }
 
-
 // New tab button (+)
 pub fn new_tab_button(_theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::Style {
@@ -460,30 +459,21 @@ pub fn menu_item_button(_theme: &Theme, status: button::Status) -> button::Style
     style
 }
 
-pub fn sftp_row_button(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
-    move |_theme, status| {
-        let mut style = button::Style {
-            background: if selected {
-                Some(Background::Color(color_accent_soft()))
-            } else {
-                None
-            },
-            text_color: Color::from_rgb8(60, 60, 67),
-            border: Border {
-                color: Color::TRANSPARENT,
-                width: 0.0,
-                radius: 6.0.into(),
-            },
-            ..button::Style::default()
-        };
-
-        if let button::Status::Hovered = status {
-            if !selected {
-                style.background = Some(Background::Color(color_panel_elevated()));
-            }
-        }
-
-        style
+pub fn sftp_row_container(selected: bool, hovered: bool) -> impl Fn(&Theme) -> container::Style {
+    move |_theme| container::Style {
+        background: if selected {
+            Some(Background::Color(color_accent_soft()))
+        } else if hovered {
+            Some(Background::Color(color_panel_elevated()))
+        } else {
+            None
+        },
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 6.0.into(),
+        },
+        ..container::Style::default()
     }
 }
 
@@ -591,11 +581,19 @@ pub fn scrollable_style(
             is_vertical_scrollbar_disabled,
             is_horizontal_scrollbar_disabled,
             ..
-        } => (0.55, 0.35, is_vertical_scrollbar_disabled && is_horizontal_scrollbar_disabled),
+        } => (
+            0.55,
+            0.35,
+            is_vertical_scrollbar_disabled && is_horizontal_scrollbar_disabled,
+        ),
         Status::Active {
             is_vertical_scrollbar_disabled,
             is_horizontal_scrollbar_disabled,
-        } => (0.0, 0.0, is_vertical_scrollbar_disabled && is_horizontal_scrollbar_disabled),
+        } => (
+            0.0,
+            0.0,
+            is_vertical_scrollbar_disabled && is_horizontal_scrollbar_disabled,
+        ),
     };
 
     let scroller_color = if disabled || alpha == 0.0 {

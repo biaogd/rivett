@@ -1,16 +1,16 @@
-use iced::widget::{
-    button, column, container, progress_bar, row, scrollable, svg, text, text_input, tooltip, Id,
-};
 use iced::widget::text::Wrapping;
+use iced::widget::{
+    Id, button, column, container, progress_bar, row, scrollable, svg, text, text_input, tooltip,
+};
 use iced::{Alignment, Element, Length, Padding};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::ui::style as ui_style;
 use crate::ui::Message;
 use crate::ui::state::{
-    SftpContextAction, SftpContextMenu, SftpEntry, SftpPane, SftpTransfer,
-    SftpTransferDirection, SftpTransferStatus,
+    SftpContextAction, SftpContextMenu, SftpEntry, SftpPane, SftpTransfer, SftpTransferDirection,
+    SftpTransferStatus,
 };
+use crate::ui::style as ui_style;
 
 pub fn render<'a>(
     local_path: &'a str,
@@ -30,6 +30,7 @@ pub fn render<'a>(
     rename_input_id: &'a Id,
     rename_target: Option<&'a crate::ui::state::SftpPendingAction>,
     rename_value: &'a str,
+    hovered_file: Option<&'a (SftpPane, String)>,
 ) -> Element<'a, Message> {
     let list_padding_left = 14;
     let list_padding_right = 6;
@@ -92,10 +93,8 @@ pub fn render<'a>(
         .height(Length::Fill)
     } else if local_entries.is_empty() {
         scrollable(
-            container(
-                column![text("No files").size(12).style(ui_style::muted_text),].spacing(6),
-            )
-            .padding(pad_trbl(0, list_padding_right, 0, list_padding_left)),
+            container(column![text("No files").size(12).style(ui_style::muted_text),].spacing(6))
+                .padding(pad_trbl(0, list_padding_right, 0, list_padding_left)),
         )
         .id(local_scroll_id.clone())
         .direction(ui_style::thin_scrollbar())
@@ -104,19 +103,26 @@ pub fn render<'a>(
     } else {
         let mut rows = column![];
         for entry in local_entries {
-            let size = entry.size.map(format_size).unwrap_or_else(|| "-".to_string());
+            let size = entry
+                .size
+                .map(format_size)
+                .unwrap_or_else(|| "-".to_string());
             let modified = entry
                 .modified
                 .map(|time| time.format("%Y-%m-%d %H:%M").to_string())
                 .unwrap_or_else(|| "-".to_string());
             let selected = local_selected == Some(entry.name.as_str());
+            let hovered = hovered_file
+                .map(|(p, n)| *p == SftpPane::Local && n == &entry.name)
+                .unwrap_or(false);
             rows = rows.push(file_row(
                 entry.name.clone(),
                 size,
                 modified,
                 entry.is_dir,
                 selected,
-                Message::SftpLocalEntryPressed(entry.name.clone(), entry.is_dir),
+                hovered,
+                Message::SftpFileDragStart(SftpPane::Local, entry.name.clone()),
                 name_column_width,
                 SftpPane::Local,
                 context_menu,
@@ -135,10 +141,8 @@ pub fn render<'a>(
 
     let remote_list = if remote_loading {
         scrollable(
-            container(
-                column![text("Loading...").size(12).style(ui_style::muted_text),].spacing(6),
-            )
-            .padding(pad_trbl(0, list_padding_right, 0, list_padding_left)),
+            container(column![text("Loading...").size(12).style(ui_style::muted_text),].spacing(6))
+                .padding(pad_trbl(0, list_padding_right, 0, list_padding_left)),
         )
         .id(remote_scroll_id.clone())
         .direction(ui_style::thin_scrollbar())
@@ -163,10 +167,8 @@ pub fn render<'a>(
         .height(Length::Fill)
     } else if remote_entries.is_empty() {
         scrollable(
-            container(
-                column![text("No files").size(12).style(ui_style::muted_text),].spacing(6),
-            )
-            .padding(pad_trbl(0, list_padding_right, 0, list_padding_left)),
+            container(column![text("No files").size(12).style(ui_style::muted_text),].spacing(6))
+                .padding(pad_trbl(0, list_padding_right, 0, list_padding_left)),
         )
         .id(remote_scroll_id.clone())
         .direction(ui_style::thin_scrollbar())
@@ -175,19 +177,26 @@ pub fn render<'a>(
     } else {
         let mut rows = column![];
         for entry in remote_entries {
-            let size = entry.size.map(format_size).unwrap_or_else(|| "-".to_string());
+            let size = entry
+                .size
+                .map(format_size)
+                .unwrap_or_else(|| "-".to_string());
             let modified = entry
                 .modified
                 .map(|time| time.format("%Y-%m-%d %H:%M").to_string())
                 .unwrap_or_else(|| "-".to_string());
             let selected = remote_selected == Some(entry.name.as_str());
+            let hovered = hovered_file
+                .map(|(p, n)| *p == SftpPane::Remote && n == &entry.name)
+                .unwrap_or(false);
             rows = rows.push(file_row(
                 entry.name.clone(),
                 size,
                 modified,
                 entry.is_dir,
                 selected,
-                Message::SftpRemoteEntryPressed(entry.name.clone(), entry.is_dir),
+                hovered,
+                Message::SftpFileDragStart(SftpPane::Remote, entry.name.clone()),
                 name_column_width,
                 SftpPane::Remote,
                 context_menu,
@@ -225,8 +234,12 @@ pub fn render<'a>(
     };
 
     let local_list_panel = column![
-        container(make_list_header())
-            .padding(pad_trbl(1, list_padding_right, 1, list_padding_left)),
+        container(make_list_header()).padding(pad_trbl(
+            1,
+            list_padding_right,
+            1,
+            list_padding_left
+        )),
         container("")
             .height(1.0)
             .width(Length::Fill)
@@ -259,8 +272,12 @@ pub fn render<'a>(
     .height(Length::Fill);
 
     let remote_list_panel = column![
-        container(make_list_header())
-            .padding(pad_trbl(1, list_padding_right, 1, list_padding_left)),
+        container(make_list_header()).padding(pad_trbl(
+            1,
+            list_padding_right,
+            1,
+            list_padding_left
+        )),
         container("")
             .height(1.0)
             .width(Length::Fill)
@@ -310,9 +327,7 @@ pub fn render<'a>(
         ));
     }
     if transfers.is_empty() {
-        queue_rows = queue_rows.push(
-            text("No transfers").size(12).style(ui_style::muted_text),
-        );
+        queue_rows = queue_rows.push(text("No transfers").size(12).style(ui_style::muted_text));
     }
     let queue_rows = queue_rows.spacing(8);
 
@@ -344,9 +359,13 @@ pub fn render<'a>(
         row![
             text("SFTP").size(15).style(ui_style::header_text),
             container("").width(Length::Fill),
-            text(if remote_loading { "Loading" } else { "Disconnected" })
-                .size(12)
-                .style(ui_style::muted_text),
+            text(if remote_loading {
+                "Loading"
+            } else {
+                "Disconnected"
+            })
+            .size(12)
+            .style(ui_style::muted_text),
         ]
         .align_y(Alignment::Center),
         panels,
@@ -409,19 +428,17 @@ pub fn render<'a>(
         )
         .on_press(Message::Ignore);
 
-        container(
-            column![
+        container(column![
+            iced::widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fixed(y)),
+            row![
                 iced::widget::Space::new()
-                    .width(Length::Fill)
-                    .height(Length::Fixed(y)),
-                row![
-                    iced::widget::Space::new()
-                        .width(Length::Fixed(x))
-                        .height(Length::Fill),
-                    menu_panel
-                ],
+                    .width(Length::Fixed(x))
+                    .height(Length::Fill),
+                menu_panel
             ],
-        )
+        ])
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
@@ -593,8 +610,7 @@ fn action_button(
     icon: Element<'static, Message>,
     message: Message,
 ) -> Element<'static, Message> {
-    let tip = container(text(label).size(11).style(ui_style::tooltip_text))
-        .padding([4, 8]);
+    let tip = container(text(label).size(11).style(ui_style::tooltip_text)).padding([4, 8]);
 
     tooltip(
         button(icon.map(|_| Message::Ignore))
@@ -625,7 +641,13 @@ fn pad_trbl(top: u16, right: u16, bottom: u16, left: u16) -> Padding {
     }
 }
 
-fn file_icon(name: &str, is_dir: bool) -> (fn(&iced::Theme) -> iced::widget::text::Style, Element<'static, Message>) {
+fn file_icon(
+    name: &str,
+    is_dir: bool,
+) -> (
+    fn(&iced::Theme) -> iced::widget::text::Style,
+    Element<'static, Message>,
+) {
     if is_dir {
         return (ui_style::header_text, icon_svg(FOLDER_SVG));
     }
@@ -646,12 +668,16 @@ fn file_icon(name: &str, is_dir: bool) -> (fn(&iced::Theme) -> iced::widget::tex
 
 fn icon_svg(data: &str) -> Element<'static, Message> {
     let handle = svg::Handle::from_memory(data.as_bytes().to_vec());
-    container(svg(handle).width(Length::Fixed(18.0)).height(Length::Fixed(18.0)))
-        .width(Length::Fixed(22.0))
-        .height(Length::Fixed(20.0))
-        .center_x(Length::Fixed(22.0))
-        .center_y(Length::Fixed(20.0))
-        .into()
+    container(
+        svg(handle)
+            .width(Length::Fixed(18.0))
+            .height(Length::Fixed(18.0)),
+    )
+    .width(Length::Fixed(22.0))
+    .height(Length::Fixed(20.0))
+    .center_x(Length::Fixed(22.0))
+    .center_y(Length::Fixed(20.0))
+    .into()
 }
 
 fn is_image_file(name: &str) -> bool {
@@ -711,10 +737,11 @@ fn file_row(
     modified: String,
     is_dir: bool,
     selected: bool,
+    hovered: bool,
     on_press: Message,
     name_column_width: f32,
     pane: SftpPane,
-    context_menu: Option<&SftpContextMenu>,
+    _context_menu: Option<&SftpContextMenu>,
     rename_input_id: &Id,
     rename_target: Option<&crate::ui::state::SftpPendingAction>,
     rename_value: &str,
@@ -743,7 +770,7 @@ fn file_row(
             .wrapping(Wrapping::None)
             .into()
     };
-    let row_button = button(
+    let row_container = container(
         row![
             icon,
             name_cell,
@@ -762,20 +789,18 @@ fn file_row(
     )
     .padding(pad_trbl(2, 6, 2, 10))
     .width(Length::Fill)
-    .style(ui_style::sftp_row_button(selected))
-    .on_press(if is_renaming { Message::Ignore } else { on_press });
+    .style(ui_style::sftp_row_container(selected, hovered));
 
-    let row_area = iced::widget::mouse_area(row_button)
+    let row_area = iced::widget::mouse_area(row_container)
         .on_right_press(Message::SftpOpenContextMenu(pane, name.clone()))
-        .on_press(Message::Ignore);
-
-    let menu_open = context_menu
-        .map(|menu| menu.pane == pane && menu.name == name)
-        .unwrap_or(false);
-
-    if !menu_open {
-        return row_area.into();
-    }
+        .on_enter(Message::SftpFileHover(Some((pane, name.clone()))))
+        .on_exit(Message::SftpFileHover(None))
+        .on_press(if is_renaming {
+            Message::Ignore
+        } else {
+            on_press
+        });
+    // Start drag/select on MouseDown
 
     row_area.into()
 }

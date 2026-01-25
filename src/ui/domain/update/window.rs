@@ -1,7 +1,7 @@
 use iced::Task;
 
-use crate::ui::message::{ActiveView, Message};
 use crate::ui::App;
+use crate::ui::message::{ActiveView, Message};
 
 pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Message>> {
     match message {
@@ -55,14 +55,26 @@ pub(in crate::ui) fn handle_runtime_event(
             if let iced::event::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) =
                 event
             {
-                if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape))
-                {
+                if matches!(
+                    key,
+                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
+                ) {
                     return Some(Task::done(Message::SftpRenameCancel));
                 }
             }
         }
 
         match event {
+            iced::event::Event::Mouse(iced::mouse::Event::ButtonReleased(_)) => {
+                if app.sftp_file_dragging.is_some() {
+                    return Some(Task::done(Message::SftpFileDragEnd));
+                }
+            }
+            iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                if app.sftp_file_dragging.is_some() {
+                    return Some(Task::done(Message::SftpFileDragUpdate(*position)));
+                }
+            }
             iced::event::Event::Window(iced::window::Event::Focused) => {
                 app.ime_focused = false;
                 app.reload_settings();
