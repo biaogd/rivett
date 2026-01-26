@@ -105,6 +105,12 @@ pub fn render<'a>(
             .style(ui_style::scrollable_style)
             .height(Length::Fill)
     };
+    let local_list: Element<'_, Message> = iced::widget::mouse_area(local_list)
+        .on_right_press(Message::SftpOpenContextMenu(
+            SftpPane::Local,
+            String::new(),
+        ))
+        .into();
 
     let remote_list = if remote_loading {
         scrollable(
@@ -178,6 +184,12 @@ pub fn render<'a>(
             .style(ui_style::scrollable_style)
             .height(Length::Fill)
     };
+    let remote_list: Element<'_, Message> = iced::widget::mouse_area(remote_list)
+        .on_right_press(Message::SftpOpenContextMenu(
+            SftpPane::Remote,
+            String::new(),
+        ))
+        .into();
 
     let make_list_header = || {
         row![
@@ -350,44 +362,50 @@ pub fn render<'a>(
 
     let overlay: Element<'_, Message> = if let Some(menu) = context_menu {
         let menu_width = 160.0;
-        let menu_height = 120.0;
+        let menu_height = 150.0;
         let padding = 8.0;
         let max_x = (panel_width - menu_width - padding).max(padding);
         let max_y = (panel_height - menu_height - padding).max(padding);
         let x = menu.position.x.clamp(padding, max_x);
         let y = menu.position.y.clamp(padding, max_y);
 
+        let has_target = !menu.name.is_empty();
         let actions = match menu.pane {
             SftpPane::Local => vec![
-                ("Upload", SftpContextAction::Upload, false),
-                ("Rename", SftpContextAction::Rename, false),
-                ("Delete", SftpContextAction::Delete, true),
+                ("Refresh", SftpContextAction::Refresh, false, true),
+                ("Upload", SftpContextAction::Upload, false, has_target),
+                ("Rename", SftpContextAction::Rename, false, has_target),
+                ("Delete", SftpContextAction::Delete, true, has_target),
             ],
             SftpPane::Remote => vec![
-                ("Download", SftpContextAction::Download, false),
-                ("Rename", SftpContextAction::Rename, false),
-                ("Delete", SftpContextAction::Delete, true),
+                ("Refresh", SftpContextAction::Refresh, false, true),
+                ("Download", SftpContextAction::Download, false, has_target),
+                ("Rename", SftpContextAction::Rename, false, has_target),
+                ("Delete", SftpContextAction::Delete, true, has_target),
             ],
         };
 
         let mut menu_column = column![];
-        for (label, action, destructive) in actions {
-            let button_style = if destructive {
+        for (label, action, destructive, enabled) in actions {
+            let button_style = if !enabled {
+                ui_style::menu_item_disabled
+            } else if destructive {
                 ui_style::menu_item_destructive
             } else {
                 ui_style::menu_item_button
             };
-            menu_column = menu_column.push(
-                button(text(label).size(13))
-                    .padding([6, 10])
-                    .style(button_style)
-                    .width(Length::Fill)
-                    .on_press(Message::SftpContextAction(
-                        menu.pane,
-                        menu.name.clone(),
-                        action,
-                    )),
-            );
+            let mut menu_button = button(text(label).size(14))
+                .padding([6, 10])
+                .style(button_style)
+                .width(Length::Fill);
+            if enabled {
+                menu_button = menu_button.on_press(Message::SftpContextAction(
+                    menu.pane,
+                    menu.name.clone(),
+                    action,
+                ));
+            }
+            menu_column = menu_column.push(menu_button);
         }
 
         let menu_panel = iced::widget::mouse_area(

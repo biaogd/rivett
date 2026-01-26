@@ -156,6 +156,7 @@ pub struct SftpState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SftpContextAction {
+    Refresh,
     Upload,
     Download,
     Rename,

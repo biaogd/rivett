@@ -263,8 +263,8 @@ pub fn icon_button(_theme: &Theme, status: button::Status) -> button::Style {
     };
 
     if let button::Status::Hovered = status {
-        style.background = Some(Background::Color(color_panel_elevated()));
-        style.text_color = Color::from_rgb8(28, 28, 30);
+        style.background = Some(Background::Color(color_panel_alt()));
+        style.text_color = Color::from_rgb8(20, 20, 22);
     }
 
     style
@@ -459,6 +459,19 @@ pub fn menu_item_button(_theme: &Theme, status: button::Status) -> button::Style
     style
 }
 
+pub fn menu_item_disabled(_theme: &Theme, _status: button::Status) -> button::Style {
+    button::Style {
+        background: None,
+        text_color: color_text_muted(),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 6.0.into(),
+        },
+        ..button::Style::default()
+    }
+}
+
 pub fn breadcrumb_container(_theme: &Theme) -> container::Style {
     container::Style {
         background: None,
@@ -538,8 +551,8 @@ pub fn menu_item_destructive(_theme: &Theme, status: button::Status) -> button::
     };
 
     if let button::Status::Hovered = status {
-        style.background = Some(Background::Color(color_panel_elevated()));
-        style.text_color = Color::from_rgb8(190, 50, 50);
+        style.background = Some(Background::Color(Color::from_rgb8(255, 233, 233)));
+        style.text_color = Color::from_rgb8(170, 40, 40);
     }
 
     style

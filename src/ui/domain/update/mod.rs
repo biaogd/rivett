@@ -293,12 +293,14 @@ impl App {
                     return Task::none();
                 };
                 let position = state.panel_cursor.unwrap_or(iced::Point::new(16.0, 16.0));
-                match pane {
-                    SftpPane::Local => {
-                        state.local_selected = Some(name.clone());
-                    }
-                    SftpPane::Remote => {
-                        state.remote_selected = Some(name.clone());
+                if !name.is_empty() {
+                    match pane {
+                        SftpPane::Local => {
+                            state.local_selected = Some(name.clone());
+                        }
+                        SftpPane::Remote => {
+                            state.remote_selected = Some(name.clone());
+                        }
                     }
                 }
                 state.context_menu = Some(SftpContextMenu {
@@ -319,6 +321,21 @@ impl App {
             Message::SftpContextAction(pane, name, action) => {
                 if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
                     state.context_menu = None;
+                }
+
+                if action == SftpContextAction::Refresh {
+                    if let Some(state) = self.sftp_state_for_tab(self.active_tab) {
+                        let path = match pane {
+                            SftpPane::Local => state.local_path.clone(),
+                            SftpPane::Remote => state.remote_path.clone(),
+                        };
+                        let message = match pane {
+                            SftpPane::Local => Message::SftpLocalPathChanged(path),
+                            SftpPane::Remote => Message::SftpRemotePathChanged(path),
+                        };
+                        return Task::done(message);
+                    }
+                    return Task::none();
                 }
 
                 if pane == SftpPane::Local && action == SftpContextAction::Upload {
