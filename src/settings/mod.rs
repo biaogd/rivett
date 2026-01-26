@@ -3,14 +3,29 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SshKeyEntry {
+    pub name: String,
+    pub path: String,
+    pub key_type: String,
+    pub fingerprint: String,
+    #[serde(default)]
+    pub is_default: bool,
+    #[serde(default)]
+    pub last_used: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppSettings {
     pub terminal_font_size: f32,
+    #[serde(default)]
+    pub ssh_keys: Vec<SshKeyEntry>,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             terminal_font_size: 12.0,
+            ssh_keys: Vec::new(),
         }
     }
 }

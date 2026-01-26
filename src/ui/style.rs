@@ -68,6 +68,13 @@ pub fn dialog_container(_theme: &Theme) -> container::Style {
     }
 }
 
+pub fn modal_backdrop_container(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.2))),
+        ..container::Style::default()
+    }
+}
+
 pub fn error_banner(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(Color::from_rgb(1.0, 0.95, 0.95))),
@@ -156,6 +163,18 @@ pub fn panel(_theme: &Theme) -> container::Style {
             color: Color::from_rgba(0.0, 0.0, 0.0, 0.04),
             offset: Vector::new(0.0, 1.0),
             blur_radius: 6.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn table_header(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(color_panel_alt())),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 10.0.into(),
         },
         ..container::Style::default()
     }
@@ -299,14 +318,14 @@ pub fn menu_button(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
     move |_theme, status| {
         let mut style = button::Style {
             background: if active {
-                Some(Background::Color(color_panel_elevated()))
+                Some(Background::Color(color_accent()))
             } else {
                 Some(Background::Color(color_panel()))
             },
             text_color: if active {
-                color_accent_dark()
+                Color::WHITE
             } else {
-                color_text_muted()
+                Color::from_rgb8(28, 28, 30)
             },
             border: Border {
                 color: color_border(),
@@ -317,8 +336,13 @@ pub fn menu_button(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
         };
 
         if let button::Status::Hovered = status {
-            style.background = Some(Background::Color(color_panel_elevated()));
-            style.text_color = Color::from_rgb8(28, 28, 30);
+            if active {
+                style.background = Some(Background::Color(color_accent_dark()));
+                style.text_color = Color::WHITE;
+            } else {
+                style.background = Some(Background::Color(color_panel_elevated()));
+                style.text_color = Color::from_rgb8(28, 28, 30);
+            }
         }
 
         style
@@ -454,6 +478,45 @@ pub fn menu_item_button(_theme: &Theme, status: button::Status) -> button::Style
     if let button::Status::Hovered = status {
         style.background = Some(Background::Color(color_panel_elevated()));
         style.text_color = Color::from_rgb8(28, 28, 30);
+    }
+
+    style
+}
+
+pub fn action_button(_theme: &Theme, status: button::Status) -> button::Style {
+    let mut style = button::Style {
+        background: None,
+        text_color: color_accent_dark(),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 6.0.into(),
+        },
+        ..button::Style::default()
+    };
+
+    if let button::Status::Hovered = status {
+        style.background = Some(Background::Color(color_panel_elevated()));
+    }
+
+    style
+}
+
+pub fn action_button_destructive(_theme: &Theme, status: button::Status) -> button::Style {
+    let mut style = button::Style {
+        background: None,
+        text_color: Color::from_rgb8(190, 50, 50),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 6.0.into(),
+        },
+        ..button::Style::default()
+    };
+
+    if let button::Status::Hovered = status {
+        style.background = Some(Background::Color(Color::from_rgb8(255, 233, 233)));
+        style.text_color = Color::from_rgb8(170, 40, 40);
     }
 
     style
