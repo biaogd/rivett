@@ -18,7 +18,6 @@ pub struct App {
     pub(in crate::ui) platform: PlatformServices,
     pub(in crate::ui) tabs: Vec<SessionTab>,
     pub(in crate::ui) active_tab: usize,
-    pub(in crate::ui) show_menu: bool,
     pub(in crate::ui) main_window: Option<iced::window::Id>,
     pub(in crate::ui) settings_process: Option<std::process::Child>,
     // Session management
@@ -98,7 +97,6 @@ impl App {
                 platform: PlatformServices::new(),
                 tabs: vec![sessions_tab],
                 active_tab: 0,
-                show_menu: true,
                 main_window: Some(main_window),
                 settings_process: None,
                 active_view: ActiveView::SessionManager,

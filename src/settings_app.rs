@@ -179,16 +179,10 @@ pub fn run() -> iced::Result {
 }
 
 fn tab_button(label: &str, active: bool, tab: SettingsTab) -> iced::Element<'_, Message> {
-    let style = if active {
-        ui_style::sidebar_button_active
-    } else {
-        ui_style::sidebar_button_inactive
-    };
-
     button(text(label).size(12))
         .padding([8, 12])
         .width(Length::Fill)
-        .style(style)
+        .style(ui_style::menu_button(active))
         .on_press(Message::SelectTab(tab))
         .into()
 }

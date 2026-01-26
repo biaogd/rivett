@@ -17,7 +17,6 @@ pub enum Message {
     CreateLocalTab,
     SelectTab(usize),
     CloseTab(usize),
-    ToggleMenu,
     // Menu actions
     ShowSessionManager,
     ToggleSftpPanel,

@@ -10,11 +10,11 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Mess
             app.window_height = height;
             app.sftp_dragging = false;
 
-            let sidebar_width = if app.show_menu { 200.0 } else { 0.0 };
+            let reserved_width = 0.0;
             let h_padding = 24.0;
             let v_padding = 120.0;
 
-            let term_w = (width as f32 - sidebar_width - h_padding).max(0.0);
+            let term_w = (width as f32 - reserved_width - h_padding).max(0.0);
             let term_h = (height as f32 - v_padding).max(0.0);
 
             let cols = (term_w / app.cell_width()) as usize;

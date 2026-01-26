@@ -8,7 +8,6 @@ pub fn render<'a>(
     tabs: &'a [SessionTab],
     active_tab: usize,
     active_view: ActiveView,
-    show_menu: bool,
     sftp_panel_open: bool,
 ) -> Element<'a, Message> {
     let current_tab = tabs.get(active_tab);
@@ -31,17 +30,7 @@ pub fn render<'a>(
         }
     };
 
-    let menu_button = if !show_menu {
-        row![
-            button(text("≡").size(20))
-                .padding([4, 8])
-                .style(ui_style::menu_button(show_menu))
-                .on_press(Message::ToggleMenu),
-            text("│").size(12).style(ui_style::muted_text),
-        ]
-    } else {
-        row![]
-    };
+    let menu_button = row![];
 
     let sftp_button = if sftp_enabled {
         button(text("SFTP").size(12))

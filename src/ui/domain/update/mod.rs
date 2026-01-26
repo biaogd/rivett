@@ -75,28 +75,6 @@ impl App {
                     }
                 }
             }
-            Message::ToggleMenu => {
-                self.show_menu = !self.show_menu;
-
-                // Recalculate layout and trigger resize
-                let width = self.window_width;
-                let height = self.window_height;
-
-                if width > 0 && height > 0 {
-                    let sidebar_width = if self.show_menu { 200.0 } else { 0.0 };
-                    let h_padding = 24.0;
-                    let v_padding = 120.0;
-
-                    let term_w = (width as f32 - sidebar_width - h_padding).max(0.0);
-                    let term_h = (height as f32 - v_padding).max(0.0);
-
-                    let cols = (term_w / self.cell_width()) as usize;
-                    let rows = (term_h / self.cell_height()) as usize;
-
-                    println!("Menu toggled. Resizing to {}x{}", cols, rows);
-                    return Task::done(Message::TerminalResize(cols, rows));
-                }
-            }
             Message::ShowSessionManager => {
                 self.show_quick_connect = false;
                 self.active_view = ActiveView::SessionManager;
@@ -687,7 +665,6 @@ impl App {
                 }
             }
             Message::ShowPortForwarding => {
-                self.show_menu = false;
                 // TODO: Show port forwarding manager
             }
             Message::ShowSettings => {
@@ -826,11 +803,11 @@ impl App {
                         let width = self.window_width;
                         let height = self.window_height;
                         if width > 0 && height > 0 {
-                            let sidebar_width = if self.show_menu { 200.0 } else { 0.0 };
+                            let reserved_width = 0.0;
                             let h_padding = 24.0;
                             let v_padding = 120.0;
 
-                            let term_w = (width as f32 - sidebar_width - h_padding).max(0.0);
+                            let term_w = (width as f32 - reserved_width - h_padding).max(0.0);
                             let term_h = (height as f32 - v_padding).max(0.0);
 
                             let cols = (term_w / self.cell_width()) as usize;

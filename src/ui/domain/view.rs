@@ -78,7 +78,6 @@ impl App {
             &self.tabs,
             self.active_tab,
             self.active_view,
-            self.show_menu,
             self.sftp_panel_open,
         ));
 
@@ -87,20 +86,7 @@ impl App {
             .height(Length::Fill)
             .style(ui_style::app_background);
 
-        let content_view: Element<'_, Message> = if self.show_menu {
-            let left_menu = container(views::sidebar::render(self.active_view))
-                .width(Length::Fixed(200.0))
-                .height(Length::Fill)
-                .padding(12)
-                .style(ui_style::dropdown_menu);
-
-            container(row![left_menu, base_container].spacing(0))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            base_container.into()
-        };
+        let content_view: Element<'_, Message> = base_container.into();
 
         let main_view: Element<'_, Message> = if self.sftp_panel_open {
             let sftp_state = self.sftp_state_for_tab(self.active_tab).unwrap_or_else(|| {
