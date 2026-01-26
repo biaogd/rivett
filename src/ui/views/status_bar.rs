@@ -61,7 +61,7 @@ pub fn render<'a>(
 
     container(status_bar)
         .width(Length::Fill)
-        .padding([6, 12])
+        .padding([3, 12])
         .style(ui_style::status_bar)
         .into()
 }
