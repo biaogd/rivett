@@ -15,7 +15,7 @@ use std::fmt;
 pub struct SshSession {
     #[allow(dead_code)]
     session: client::Handle<SshClient>,
-    active_channel: Option<russh::Channel<client::Msg>>,
+    active_channel: Option<russh::ChannelWriteHalf<client::Msg>>,
     shell_channel: Arc<StdMutex<Option<ChannelId>>>,
 }
 
@@ -38,6 +38,7 @@ impl SshSession {
         password: Option<String>,
         key_passphrase: Option<String>,
     ) -> Result<(Self, mpsc::UnboundedReceiver<Vec<u8>>)> {
+        tracing::info!("ssh connect start {}@{}:{}", username, host, port);
         let config = client::Config {
             inactivity_timeout: None,
             keepalive_interval: Some(std::time::Duration::from_secs(KEEPALIVE_INTERVAL_SECS)),
@@ -68,6 +69,7 @@ impl SshSession {
                 if !auth_res.success() {
                     return Err(anyhow::anyhow!("Authentication failed"));
                 }
+                tracing::info!("ssh auth success (password)");
             }
             AuthMethod::PrivateKey { path } => {
                 let expanded = Self::expand_tilde(&path);
@@ -87,6 +89,7 @@ impl SshSession {
                 if !auth_res.success() {
                     return Err(anyhow::anyhow!("Authentication failed"));
                 }
+                tracing::info!("ssh auth success (public key)");
             }
         }
 
@@ -102,7 +105,12 @@ impl SshSession {
         .await;
 
         match connect_result {
-            Ok(result) => result,
+            Ok(result) => {
+                if result.is_ok() {
+                    tracing::info!("ssh connect ok {}@{}:{}", username, host, port);
+                }
+                result
+            }
             Err(_) => Err(anyhow::anyhow!(
                 "Connection timeout ({}s)",
                 CONNECT_TIMEOUT_SECS
@@ -139,7 +147,11 @@ impl SshSession {
             .await?;
         channel.request_shell(true).await?;
         let id = channel.id();
-        self.active_channel = Some(channel);
+        let (mut read_half, write_half) = channel.split();
+        tokio::spawn(async move {
+            while let Some(_msg) = read_half.wait().await {}
+        });
+        self.active_channel = Some(write_half);
         if let Ok(mut guard) = self.shell_channel.lock() {
             *guard = Some(id);
         }
@@ -155,6 +167,7 @@ impl SshSession {
 
     pub async fn write_data(&mut self, channel_id: ChannelId, data: &[u8]) -> Result<()> {
         let data = russh::CryptoVec::from_slice(data);
+        tracing::debug!("write {} bytes on channel {:?}", data.len(), channel_id);
         match self.session.data(channel_id, data).await {
             Ok(_) => Ok(()),
             Err(_) => Err(anyhow::anyhow!(

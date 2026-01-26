@@ -32,6 +32,33 @@ impl client::Handler for SshClient {
         }
     }
 
+    fn channel_open_confirmation(
+        &mut self,
+        id: ChannelId,
+        max_packet_size: u32,
+        window_size: u32,
+        _session: &mut client::Session,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
+        async move {
+            tracing::info!(
+                "ssh channel {:?} open (window={}, max_packet={})",
+                id,
+                window_size,
+                max_packet_size
+            );
+            Ok(())
+        }
+    }
+
+    fn adjust_window(
+        &mut self,
+        channel: ChannelId,
+        window: u32,
+    ) -> u32 {
+        tracing::debug!("ssh window adjust {:?} -> {}", channel, window);
+        window
+    }
+
     fn data(
         &mut self,
         channel: ChannelId,
@@ -49,7 +76,22 @@ impl client::Handler for SshClient {
                     }
                 }
             }
-            println!("DEBUG: Received {} bytes on channel {:?}", data.len(), channel);
+            use std::sync::Mutex;
+            use std::sync::OnceLock;
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            use std::time::Instant;
+
+            static RX_BYTES: AtomicUsize = AtomicUsize::new(0);
+            static LAST_LOG: OnceLock<Mutex<Instant>> = OnceLock::new();
+
+            RX_BYTES.fetch_add(data.len(), Ordering::Relaxed);
+            let last_log = LAST_LOG.get_or_init(|| Mutex::new(Instant::now()));
+            let mut last = last_log.lock().unwrap();
+            if last.elapsed().as_secs() >= 1 {
+                let bytes = RX_BYTES.swap(0, Ordering::Relaxed);
+                tracing::info!("ssh rx {} bytes/s (channel {:?})", bytes, channel);
+                *last = Instant::now();
+            }
             if let Err(e) = tx.send(data) {
                 eprintln!("Failed to send SSH data to UI: {}", e);
             }
@@ -63,7 +105,7 @@ impl client::Handler for SshClient {
         _session: &mut client::Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         async move {
-            println!("DEBUG: Channel {:?} closed by server", channel);
+            tracing::info!("ssh channel {:?} closed by server", channel);
             Ok(())
         }
     }
@@ -74,8 +116,21 @@ impl client::Handler for SshClient {
         _session: &mut client::Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         async move {
-            println!("DEBUG: Channel {:?} sent EOF", channel);
+            tracing::info!("ssh channel {:?} sent EOF", channel);
             Ok(())
+        }
+    }
+
+    fn disconnected(
+        &mut self,
+        reason: client::DisconnectReason<Self::Error>,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
+        async move {
+            tracing::info!("ssh disconnected: {:?}", reason);
+            match reason {
+                client::DisconnectReason::ReceivedDisconnect(_) => Ok(()),
+                client::DisconnectReason::Error(e) => Err(e),
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::ui::App;
 pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Message>> {
     match message {
         Message::TerminalDataReceived(tab_index, data) => {
+            let next_rx = app.tabs.get(tab_index).and_then(|tab| tab.rx.clone());
             if let Some(tab) = app.tabs.get_mut(tab_index) {
                 if data.is_empty() {
                     tab.state = SessionState::Disconnected;
@@ -15,11 +16,52 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Mess
                 }
 
                 if let Some(tx) = &tab.parser_tx {
-                    let _ = tx.send(data);
+                    if tx.send(data.clone()).is_err() {
+                        tracing::warn!("parser thread unavailable, falling back to direct parse");
+                        tab.emulator.process_input(&data);
+                        tab.mark_full_damage();
+                    }
                 } else {
                     tab.emulator.process_input(&data);
                     tab.mark_full_damage();
                 }
+            }
+            if let Some(rx) = next_rx {
+                return Some(Task::perform(
+                    async move {
+                        let mut guard = rx.lock().await;
+                        match guard.recv().await {
+                            Some(data) => {
+                                use std::sync::Mutex;
+                                use std::sync::OnceLock;
+                                use std::sync::atomic::{AtomicUsize, Ordering};
+                                use std::time::Instant;
+
+                                static RX_BYTES: AtomicUsize = AtomicUsize::new(0);
+                                static LAST_LOG: OnceLock<Mutex<Instant>> = OnceLock::new();
+
+                                RX_BYTES.fetch_add(data.len(), Ordering::Relaxed);
+                                let last_log = LAST_LOG.get_or_init(|| Mutex::new(Instant::now()));
+                                let mut last = last_log.lock().unwrap();
+                                if last.elapsed().as_secs() >= 1 {
+                                    let bytes = RX_BYTES.swap(0, Ordering::Relaxed);
+                                    tracing::info!(
+                                        "ui recv {} bytes/s (tab {})",
+                                        bytes,
+                                        tab_index
+                                    );
+                                    *last = Instant::now();
+                                }
+                                (tab_index, data)
+                            }
+                            None => {
+                                tracing::debug!("recv loop closed for tab {}", tab_index);
+                                (tab_index, vec![])
+                            }
+                        }
+                    },
+                    |(idx, data)| Message::TerminalDataReceived(idx, data),
+                ));
             }
             Some(Task::none())
         }
@@ -115,8 +157,8 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Mess
                             .await
                             {
                                 Ok(Ok(_)) => {}
-                                Ok(Err(e)) => println!("UI: Write error: {}", e),
-                                Err(_) => println!("UI: Write timeout - session unresponsive"),
+                                Ok(Err(e)) => tracing::warn!("ui write error: {}", e),
+                                Err(_) => tracing::warn!("ui write timeout - session unresponsive"),
                             }
                         },
                         |_| Message::TerminalInput(vec![]),

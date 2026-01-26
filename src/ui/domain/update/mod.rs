@@ -738,8 +738,18 @@ impl App {
                             async move {
                                 let mut guard = rx_clone.lock().await;
                                 match guard.recv().await {
-                                    Some(data) => (tab_index, data),
-                                    None => (tab_index, vec![]),
+                                    Some(data) => {
+                                        tracing::debug!(
+                                            "recv loop got {} bytes for tab {}",
+                                            data.len(),
+                                            tab_index
+                                        );
+                                        (tab_index, data)
+                                    }
+                                    None => {
+                                        tracing::debug!("recv loop closed for tab {}", tab_index);
+                                        (tab_index, vec![])
+                                    }
                                 }
                             },
                             |(idx, data)| Message::TerminalDataReceived(idx, data),
@@ -785,11 +795,11 @@ impl App {
                                                 match tokio::time::timeout(std::time::Duration::from_millis(1000), write_future).await {
                                                     Ok(Ok(_)) => {},
                                                     Ok(Err(e)) => {
-    println!("SSH: Failed to write terminal response: {}", e);
+                                                        tracing::warn!("ssh write terminal response failed: {}", e);
                                                         break;
                                                     },
                                                     Err(_) => {
-                                                        println!("SSH: Write terminal response timeout - connection might be dead");
+                                                        tracing::warn!("ssh write terminal response timeout - connection might be dead");
                                                         // We don't break here immediately, hoping it's temporary? 
                                                         // Or we should? If TCP is stuck, it's stuck.
                                                     }
