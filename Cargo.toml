@@ -16,8 +16,7 @@ parking_lot = "0.12"
 portable-pty = "0.8"
 
 # SSH connection
-russh = { version = "0.56.0", default-features = false, features = ["flate2", "aws-lc-rs"] }
-russh-keys = "0.49.2"
+russh = { version = "0.57.0", default-features = false, features = ["flate2", "aws-lc-rs", "rsa"] }
 russh-sftp = "2.1.1"
 
 # Async runtime

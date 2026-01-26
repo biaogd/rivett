@@ -691,10 +691,12 @@ fn normalize_key_type(value: &str) -> String {
 }
 
 fn parse_key_metadata(secret: &str) -> Result<(String, String), String> {
-    let key = russh_keys::decode_secret_key(secret, None)
+    let key = russh::keys::decode_secret_key(secret, None)
         .map_err(|err| format!("Failed to parse key: {}", err))?;
     let key_type = display_key_type(key.algorithm().as_str());
-    let fingerprint = key.fingerprint(russh_keys::HashAlg::Sha256).to_string();
+    let fingerprint = key
+        .fingerprint(russh::keys::HashAlg::Sha256)
+        .to_string();
     Ok((key_type, fingerprint))
 }
 
