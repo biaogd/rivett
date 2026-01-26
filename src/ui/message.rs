@@ -83,6 +83,8 @@ pub enum Message {
     SessionKeyPathChanged(String),
     SessionKeyPassphraseChanged(String),
     SessionSearchChanged(String),
+    ToggleSavedKeyMenu,
+    CloseSavedKeyMenu,
     TestConnection,
     TestConnectionResult(Result<(), String>),
     // SSH Connection

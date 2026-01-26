@@ -703,6 +703,8 @@ impl App {
             | Message::SessionKeyPathChanged(_)
             | Message::SessionKeyPassphraseChanged(_)
             | Message::SessionSearchChanged(_)
+            | Message::ToggleSavedKeyMenu
+            | Message::CloseSavedKeyMenu
             | Message::TestConnection
             | Message::TestConnectionResult(_)
             | Message::ToggleSessionMenu(_)

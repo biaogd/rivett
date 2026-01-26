@@ -27,6 +27,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.show_password = false;
             app.validation_error = None;
             app.connection_test_status = ConnectionTestStatus::Idle;
+            app.saved_key_menu_open = false;
             Task::none()
         }
         Message::EditSession(id) => {
@@ -57,6 +58,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.editing_session = Some(session);
                 app.validation_error = None;
                 app.connection_test_status = ConnectionTestStatus::Idle;
+                app.saved_key_menu_open = false;
             }
             Task::none()
         }
@@ -194,6 +196,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
 
                 app.editing_session = None;
                 app.validation_error = None;
+                app.saved_key_menu_open = false;
             }
             Task::none()
         }
@@ -201,6 +204,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.editing_session = None;
             app.validation_error = None;
             app.connection_test_status = ConnectionTestStatus::Idle;
+            app.saved_key_menu_open = false;
             Task::none()
         }
         Message::CloseSessionManager => {
@@ -219,6 +223,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.validation_error = None;
             app.show_password = false;
             app.connection_test_status = ConnectionTestStatus::Idle;
+            app.saved_key_menu_open = false;
             Task::none()
         }
         Message::ClearValidationError => {
@@ -266,6 +271,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.form_key_path = value;
             app.validation_error = None;
             app.connection_test_status = ConnectionTestStatus::Idle;
+            app.saved_key_menu_open = false;
             Task::none()
         }
         Message::SessionKeyPassphraseChanged(value) => {
@@ -358,6 +364,14 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SessionSearchChanged(value) => {
             app.session_search_query = value;
+            Task::none()
+        }
+        Message::ToggleSavedKeyMenu => {
+            app.saved_key_menu_open = !app.saved_key_menu_open;
+            Task::none()
+        }
+        Message::CloseSavedKeyMenu => {
+            app.saved_key_menu_open = false;
             Task::none()
         }
         Message::ToggleSessionMenu(id) => {

@@ -41,6 +41,7 @@ pub struct App {
     pub(in crate::ui) session_search_query: String,
     pub(in crate::ui) show_password: bool,
     pub(in crate::ui) connection_test_status: ConnectionTestStatus,
+    pub(in crate::ui) saved_key_menu_open: bool,
     pub(in crate::ui) window_width: u32,
     pub(in crate::ui) window_height: u32,
     pub(in crate::ui) last_error: Option<(String, std::time::Instant)>, // (error message, timestamp)
@@ -119,6 +120,7 @@ impl App {
                 session_search_query: String::new(),
                 show_password: false,
                 connection_test_status: ConnectionTestStatus::Idle,
+                saved_key_menu_open: false,
                 window_width: 1024, // Default assumption
                 window_height: 768,
                 last_error: None,

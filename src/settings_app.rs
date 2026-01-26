@@ -28,12 +28,6 @@ enum SettingsTab {
     Keys,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AddKeyMode {
-    File,
-    Paste,
-}
-
 #[derive(Debug)]
 struct SettingsApp {
     activation_set: bool,
@@ -43,10 +37,8 @@ struct SettingsApp {
     parent_pid: Option<u32>,
     font_size_input: String,
     editing_key: Option<usize>,
-    editing_key_name: String,
     key_status: Option<String>,
     adding_key: bool,
-    adding_key_mode: AddKeyMode,
     adding_key_name: String,
     adding_key_path: String,
     adding_key_type: String,
@@ -66,17 +58,12 @@ enum Message {
     AddKeyPathChanged(String),
     AddKeyTypeChanged(String),
     AddKeyPasteAction(text_editor::Action),
-    SetAddKeyMode(AddKeyMode),
     AddKeyPickFile,
     AddKeySave,
     AddKeyCancel,
     RefreshKeys,
     EditKeyStart(usize),
-    EditKeyNameChanged(String),
-    EditKeySave,
-    EditKeyCancel,
     DeleteKey(usize),
-    TestKey(usize),
     SetDefaultKey(usize),
     Tick,
 }
@@ -95,10 +82,8 @@ impl SettingsApp {
             parent_pid,
             font_size_input,
             editing_key: None,
-            editing_key_name: String::new(),
             key_status: None,
             adding_key: false,
-            adding_key_mode: AddKeyMode::File,
             adding_key_name: String::new(),
             adding_key_path: String::new(),
             adding_key_type: String::new(),
@@ -154,11 +139,8 @@ impl SettingsApp {
             }
             Message::AddExistingKey => {
                 self.adding_key = true;
-                self.adding_key_mode = AddKeyMode::File;
+                self.editing_key = None;
                 self.key_status = None;
-            }
-            Message::SetAddKeyMode(mode) => {
-                self.adding_key_mode = mode;
             }
             Message::AddKeyNameChanged(value) => {
                 self.adding_key_name = value;
@@ -202,55 +184,70 @@ impl SettingsApp {
                 let path = self.adding_key_path.trim().to_string();
                 let pasted = self.adding_key_paste.text();
                 let has_paste = !pasted.trim().is_empty();
-                let can_save = match self.adding_key_mode {
-                    AddKeyMode::File => !path.is_empty(),
-                    AddKeyMode::Paste => has_paste,
-                };
-                if can_save && !name.is_empty() {
-                    let (key_type, fingerprint, parse_status) = match self.adding_key_mode {
-                        AddKeyMode::File => match fs::read_to_string(&path) {
-                            Ok(contents) => match parse_key_metadata(&contents) {
-                                Ok((key_type, fingerprint)) => (key_type, fingerprint, None),
+                let can_save = (!path.is_empty() || has_paste) && !name.is_empty();
+                if can_save {
+                    let (key_type, fingerprint, parse_status, stored_path) =
+                        if !path.is_empty() {
+                            match fs::read_to_string(&path) {
+                                Ok(contents) => match parse_key_metadata(&contents) {
+                                    Ok((key_type, fingerprint)) => {
+                                        (key_type, fingerprint, None, path)
+                                    }
+                                    Err(err) => (
+                                        normalize_key_type(&self.adding_key_type),
+                                        String::new(),
+                                        Some(err),
+                                        path,
+                                    ),
+                                },
+                                Err(err) => (
+                                    normalize_key_type(&self.adding_key_type),
+                                    String::new(),
+                                    Some(format!("Failed to read key: {}", err)),
+                                    path,
+                                ),
+                            }
+                        } else {
+                            match parse_key_metadata(&pasted) {
+                                Ok((key_type, fingerprint)) => {
+                                    (key_type, fingerprint, None, "<pasted>".to_string())
+                                }
                                 Err(err) => (
                                     normalize_key_type(&self.adding_key_type),
                                     String::new(),
                                     Some(err),
+                                    "<pasted>".to_string(),
                                 ),
-                            },
-                            Err(err) => (
-                                normalize_key_type(&self.adding_key_type),
-                                String::new(),
-                                Some(format!("Failed to read key: {}", err)),
-                            ),
-                        },
-                        AddKeyMode::Paste => match parse_key_metadata(&pasted) {
-                            Ok((key_type, fingerprint)) => (key_type, fingerprint, None),
-                            Err(err) => (
-                                normalize_key_type(&self.adding_key_type),
-                                String::new(),
-                                Some(err),
-                            ),
-                        },
-                    };
-                    let is_default = self.settings.ssh_keys.is_empty();
-                    let stored_path = match self.adding_key_mode {
-                        AddKeyMode::File => path,
-                        AddKeyMode::Paste => "<pasted>".to_string(),
-                    };
-                    self.settings.ssh_keys.push(crate::settings::SshKeyEntry {
-                        name: name.clone(),
-                        path: stored_path,
-                        key_type,
-                        fingerprint,
-                        is_default,
-                        last_used: None,
-                    });
+                            }
+                        };
+                    let is_pasted = stored_path == "<pasted>";
+                    if let Some(index) = self.editing_key.take() {
+                        if let Some(entry) = self.settings.ssh_keys.get_mut(index) {
+                            entry.name = name.clone();
+                            entry.path = stored_path.clone();
+                            entry.key_type = key_type;
+                            entry.fingerprint = fingerprint;
+                        }
+                    } else {
+                        let is_default = self.settings.ssh_keys.is_empty();
+                        self.settings.ssh_keys.push(crate::settings::SshKeyEntry {
+                            name: name.clone(),
+                            path: stored_path.clone(),
+                            key_type,
+                            fingerprint,
+                            is_default,
+                            last_used: None,
+                        });
+                    }
                     self.persist_settings();
-                    self.key_status = Some(match (self.adding_key_mode, parse_status) {
-                        (_, Some(err)) => err,
-                        (AddKeyMode::File, None) => format!("Added key \"{}\".", name),
-                        (AddKeyMode::Paste, None) => {
-                            format!("Added key \"{}\" (pasted content not stored yet).", name)
+                    self.key_status = Some(match parse_status {
+                        Some(err) => err,
+                        None => {
+                            if is_pasted {
+                                format!("Added key \"{}\" (pasted content not stored yet).", name)
+                            } else {
+                                format!("Added key \"{}\".", name)
+                            }
                         }
                     });
                     self.adding_key = false;
@@ -262,6 +259,7 @@ impl SettingsApp {
             }
             Message::AddKeyCancel => {
                 self.adding_key = false;
+                self.editing_key = None;
                 self.adding_key_name.clear();
                 self.adding_key_path.clear();
                 self.adding_key_type.clear();
@@ -271,26 +269,13 @@ impl SettingsApp {
             Message::EditKeyStart(index) => {
                 if let Some(entry) = self.settings.ssh_keys.get(index) {
                     self.editing_key = Some(index);
-                    self.editing_key_name = entry.name.clone();
+                    self.adding_key = true;
+                    self.adding_key_name = entry.name.clone();
+                    self.adding_key_path = entry.path.clone();
+                    self.adding_key_type = entry.key_type.clone();
+                    self.adding_key_paste = text_editor::Content::new();
+                    self.key_status = None;
                 }
-            }
-            Message::EditKeyNameChanged(value) => {
-                self.editing_key_name = value;
-            }
-            Message::EditKeySave => {
-                if let Some(index) = self.editing_key.take() {
-                    let trimmed = self.editing_key_name.trim();
-                    if !trimmed.is_empty() {
-                        if let Some(entry) = self.settings.ssh_keys.get_mut(index) {
-                            entry.name = trimmed.to_string();
-                        }
-                        self.persist_settings();
-                    }
-                }
-            }
-            Message::EditKeyCancel => {
-                self.editing_key = None;
-                self.editing_key_name.clear();
             }
             Message::DeleteKey(index) => {
                 if index < self.settings.ssh_keys.len() {
@@ -301,13 +286,6 @@ impl SettingsApp {
                             first.is_default = true;
                         }
                     }
-                    self.persist_settings();
-                }
-            }
-            Message::TestKey(index) => {
-                if let Some(entry) = self.settings.ssh_keys.get_mut(index) {
-                    entry.last_used = Some(current_timestamp());
-                    self.key_status = Some(format!("Tested key \"{}\".", entry.name));
                     self.persist_settings();
                 }
             }
@@ -408,6 +386,104 @@ impl SettingsApp {
                     .as_ref()
                     .map(|status| text(status).size(13).style(ui_style::muted_text));
 
+                let add_form = {
+                    let label_width = 80.0;
+
+                    let file_row = row![
+                        text("Path").size(13).width(Length::Fixed(label_width)),
+                        container(
+                            row![
+                                text_input("~/.ssh/id_ed25519", &self.adding_key_path)
+                                    .on_input(Message::AddKeyPathChanged)
+                                    .padding([4, 8])
+                                    .size(13)
+                                    .style(ui_style::dialog_input)
+                                    .width(Length::Fill),
+                                button(text("Choose...").size(12))
+                                    .padding([2, 8])
+                                    .style(ui_style::secondary_button_style)
+                                    .on_press(Message::AddKeyPickFile),
+                            ]
+                            .spacing(4),
+                        )
+                        .width(Length::Fill),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center);
+
+                    let paste_row: Element<'_, Message> = row![
+                        text("Paste").size(13).width(Length::Fixed(label_width)),
+                        container(
+                            text_editor(&self.adding_key_paste)
+                                .placeholder("Paste private key here")
+                                .on_action(Message::AddKeyPasteAction)
+                                .height(Length::Fixed(110.0)),
+                        )
+                        .width(Length::Fill),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .into();
+
+                    let form = column![
+                        row![
+                            text("Add SSH Key").size(14),
+                            container("").width(Length::Fill),
+                        ]
+                        .align_y(Alignment::Center),
+                        row![
+                            text("Name").size(13).width(Length::Fixed(label_width)),
+                            container(
+                                text_input("Key name", &self.adding_key_name)
+                                    .on_input(Message::AddKeyNameChanged)
+                                    .padding([4, 8])
+                                    .size(13)
+                                    .style(ui_style::dialog_input)
+                                    .width(Length::Fill),
+                            )
+                            .width(Length::Fill),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                        row![
+                            text("Type").size(13).width(Length::Fixed(label_width)),
+                            container(
+                                text_input("ed25519 / rsa", &self.adding_key_type)
+                                    .on_input(Message::AddKeyTypeChanged)
+                                    .padding([4, 8])
+                                    .size(13)
+                                    .style(ui_style::dialog_input)
+                                    .width(Length::Fill),
+                            )
+                            .width(Length::Fill),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                        file_row,
+                        paste_row,
+                        row![
+                            container("").width(Length::Fill),
+                            button(text("Cancel").size(13))
+                                .padding([2, 10])
+                                .style(ui_style::action_button)
+                                .on_press(Message::AddKeyCancel),
+                            button(text("Add").size(13))
+                                .padding([2, 10])
+                                .style(ui_style::primary_button_style)
+                                .on_press(Message::AddKeySave),
+                        ]
+                        .spacing(6)
+                        .align_y(Alignment::Center),
+                    ]
+                    .spacing(6)
+                    .width(Length::Fill);
+
+                    container(form)
+                        .padding(12)
+                        .style(ui_style::form_section)
+                        .width(Length::Fill)
+                };
+
                 let list_header = row![
                     text("Name")
                         .size(12)
@@ -459,47 +535,19 @@ impl SettingsApp {
                                 .into()
                         };
                         let name_cell: Element<'_, Message> =
-                            if self.editing_key == Some(index) {
-                                text_input("Name", &self.editing_key_name)
-                                    .on_input(Message::EditKeyNameChanged)
-                                    .padding([2, 6])
-                                    .size(13)
-                                    .style(ui_style::dialog_input)
-                                    .into()
-                            } else {
-                                text(&entry.name).size(13).into()
-                            };
-                        let actions: Element<'_, Message> = if self.editing_key == Some(index) {
-                            row![
-                                button(text("Save").size(12))
-                                    .padding([2, 4])
-                                    .style(ui_style::action_button)
-                                    .on_press(Message::EditKeySave),
-                                button(text("Cancel").size(12))
-                                    .padding([2, 4])
-                                    .style(ui_style::action_button)
-                                    .on_press(Message::EditKeyCancel),
-                            ]
-                            .spacing(6)
-                            .into()
-                        } else {
-                            row![
-                                button(text("Edit").size(12))
-                                    .padding([2, 4])
-                                    .style(ui_style::action_button)
-                                    .on_press(Message::EditKeyStart(index)),
-                                button(text("Delete").size(12))
-                                    .padding([2, 4])
-                                    .style(ui_style::action_button_destructive)
-                                    .on_press(Message::DeleteKey(index)),
-                                button(text("Test").size(12))
-                                    .padding([2, 4])
-                                    .style(ui_style::action_button)
-                                    .on_press(Message::TestKey(index)),
-                            ]
-                            .spacing(6)
-                            .into()
-                        };
+                            text(&entry.name).size(13).into();
+                        let actions: Element<'_, Message> = row![
+                            button(text("Edit").size(12))
+                                .padding([2, 4])
+                                .style(ui_style::action_button)
+                                .on_press(Message::EditKeyStart(index)),
+                            button(text("Delete").size(12))
+                                .padding([2, 4])
+                                .style(ui_style::action_button_destructive)
+                                .on_press(Message::DeleteKey(index)),
+                        ]
+                        .spacing(6)
+                        .into();
                         rows = rows.push(
                             row![
                                 container(name_cell).width(Length::FillPortion(4)),
@@ -557,7 +605,11 @@ impl SettingsApp {
                 .spacing(10)
                 .align_y(Alignment::Center);
 
-                let mut content = column![header, list, actions].spacing(16);
+                let mut content = if self.adding_key {
+                    column![header, add_form].spacing(8)
+                } else {
+                    column![header, list, actions].spacing(16)
+                };
                 if let Some(line) = status_line {
                     content = content.push(line);
                 }
@@ -578,117 +630,11 @@ impl SettingsApp {
 
         let layout = row![sidebar, content].spacing(0);
 
-        let base: Element<'_, Message> = container(layout)
+        container(layout)
             .width(Length::Fill)
             .height(Length::Fill)
             .style(ui_style::app_background)
-            .into();
-
-        let overlay: Element<'_, Message> = if self.adding_key {
-            let mode_row = row![
-                button(text("From File").size(13))
-                    .padding([4, 10])
-                    .style(ui_style::menu_button(self.adding_key_mode == AddKeyMode::File))
-                    .on_press(Message::SetAddKeyMode(AddKeyMode::File)),
-                button(text("Paste Key").size(13))
-                    .padding([4, 10])
-                    .style(ui_style::menu_button(self.adding_key_mode == AddKeyMode::Paste))
-                    .on_press(Message::SetAddKeyMode(AddKeyMode::Paste)),
-            ]
-            .spacing(6);
-
-            let file_row = row![
-                text("Path").size(13).style(ui_style::muted_text),
-                container("").width(Length::Fill),
-                text_input("~/.ssh/id_ed25519", &self.adding_key_path)
-                    .on_input(Message::AddKeyPathChanged)
-                    .padding([4, 8])
-                    .size(13)
-                    .style(ui_style::dialog_input)
-                    .width(Length::Fixed(220.0)),
-                button(text("Choose...").size(13))
-                    .padding([4, 10])
-                    .style(ui_style::secondary_button_style)
-                    .on_press(Message::AddKeyPickFile),
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center);
-
-            let paste_editor = text_editor(&self.adding_key_paste)
-                .placeholder("Paste private key here")
-                .on_action(Message::AddKeyPasteAction)
-                .height(Length::Fixed(120.0));
-
-            let source_row: Element<'_, Message> = match self.adding_key_mode {
-                AddKeyMode::File => file_row.into(),
-                AddKeyMode::Paste => paste_editor.into(),
-            };
-
-            let form = column![
-                text("Add SSH Key").size(14),
-                mode_row,
-                row![
-                    text("Name").size(13).style(ui_style::muted_text),
-                    container("").width(Length::Fill),
-                    text_input("Key name", &self.adding_key_name)
-                        .on_input(Message::AddKeyNameChanged)
-                        .padding([4, 8])
-                        .size(13)
-                        .style(ui_style::dialog_input)
-                        .width(Length::Fixed(260.0)),
-                ]
-                .align_y(Alignment::Center),
-                row![
-                    text("Type").size(13).style(ui_style::muted_text),
-                    container("").width(Length::Fill),
-                    text_input("ed25519 / rsa", &self.adding_key_type)
-                        .on_input(Message::AddKeyTypeChanged)
-                        .padding([4, 8])
-                        .size(13)
-                        .style(ui_style::dialog_input)
-                        .width(Length::Fixed(260.0)),
-                ]
-                .align_y(Alignment::Center),
-                source_row,
-                row![
-                    container("").width(Length::Fill),
-                    button(text("Cancel").size(13))
-                        .padding([4, 10])
-                        .style(ui_style::secondary_button_style)
-                        .on_press(Message::AddKeyCancel),
-                    button(text("Add").size(13))
-                        .padding([4, 10])
-                        .style(ui_style::secondary_button_style)
-                        .on_press(Message::AddKeySave),
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center),
-            ]
-            .spacing(10);
-
-            let dialog = container(form)
-                .padding(16)
-                .width(Length::Fixed(520.0))
-                .style(ui_style::dialog_container);
-
-            iced::widget::mouse_area(
-                container(dialog)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(ui_style::modal_backdrop_container)
-                    .center_x(Length::Fill)
-                    .center_y(Length::Fill),
-            )
-            .on_press(Message::AddKeyCancel)
             .into()
-        } else {
-            container(iced::widget::Space::new())
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        };
-
-        iced::widget::stack![base, overlay].into()
     }
 
     fn update_font_size(&mut self, size: f32) {
@@ -717,11 +663,6 @@ fn short_fingerprint(value: &str) -> String {
     }
     let head = &trimmed[..12];
     format!("{}...", head)
-}
-
-fn current_timestamp() -> String {
-    let now = chrono::Local::now();
-    now.format("%Y-%m-%d %H:%M").to_string()
 }
 
 fn normalize_key_name(name: &str, path: &str) -> String {

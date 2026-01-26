@@ -68,13 +68,6 @@ pub fn dialog_container(_theme: &Theme) -> container::Style {
     }
 }
 
-pub fn modal_backdrop_container(_theme: &Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.2))),
-        ..container::Style::default()
-    }
-}
-
 pub fn error_banner(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(Color::from_rgb(1.0, 0.95, 0.95))),
@@ -163,6 +156,18 @@ pub fn panel(_theme: &Theme) -> container::Style {
             color: Color::from_rgba(0.0, 0.0, 0.0, 0.04),
             offset: Vector::new(0.0, 1.0),
             blur_radius: 6.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn form_section(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(color_panel())),
+        border: Border {
+            color: color_border(),
+            width: 1.0,
+            radius: 12.0.into(),
         },
         ..container::Style::default()
     }
@@ -520,6 +525,39 @@ pub fn action_button_destructive(_theme: &Theme, status: button::Status) -> butt
     }
 
     style
+}
+
+pub fn dropdown_button(_theme: &Theme, status: button::Status) -> button::Style {
+    let mut style = button::Style {
+        background: Some(Background::Color(color_panel())),
+        text_color: Color::from_rgb8(28, 28, 30),
+        border: Border {
+            color: Color::from_rgb8(218, 220, 224),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        ..button::Style::default()
+    };
+
+    if let button::Status::Hovered = status {
+        style.border.color = color_accent();
+        style.background = Some(Background::Color(color_panel_elevated()));
+    }
+
+    style
+}
+
+pub fn dropdown_button_disabled(_theme: &Theme, _status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(color_panel_alt())),
+        text_color: color_text_muted(),
+        border: Border {
+            color: Color::from_rgb8(218, 220, 224),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        ..button::Style::default()
+    }
 }
 
 pub fn menu_item_disabled(_theme: &Theme, _status: button::Status) -> button::Style {

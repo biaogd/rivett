@@ -1,23 +1,26 @@
 use crate::session::SessionConfig;
+use crate::settings::SshKeyEntry;
 use crate::ui::Message;
 use crate::ui::style as ui_style;
 use crate::ui::state::ConnectionTestStatus;
-use iced::widget::{button, column, container, row, text, text_input};
+use iced::widget::{button, column, container, mouse_area, row, stack, text, text_input, Space};
 use iced::{Alignment, Element, Length};
 
 pub fn render<'a>(
     editing_session: Option<&'a SessionConfig>,
     saved_sessions: &'a [SessionConfig],
+    saved_keys: &'a [SshKeyEntry],
     form_name: &'a str,
     form_host: &'a str,
     form_port: &'a str,
     form_username: &'a str,
     form_password: &'a str,
     form_key_path: &'a str,
-    form_key_passphrase: &'a str,
+    _form_key_passphrase: &'a str,
     auth_method_password: bool,
     show_password: bool,
     connection_test_status: &'a ConnectionTestStatus,
+    saved_key_menu_open: bool,
     validation_error: Option<&'a String>,
 ) -> Element<'a, Message> {
     let is_new = editing_session
@@ -139,27 +142,43 @@ pub fn render<'a>(
         ]
         .spacing(6)
     } else {
-        column![
-            text("Private key path")
-                .size(12)
-                .style(ui_style::muted_text),
-            text_input("~/.ssh/id_rsa", form_key_path)
-                .on_input(Message::SessionKeyPathChanged)
-                .padding([8, 10])
-                .size(13)
-                .style(ui_style::dialog_input),
-            container("").height(8.0),
-            text("Key passphrase (optional)")
-                .size(12)
-                .style(ui_style::muted_text),
-            text_input("", form_key_passphrase)
-                .on_input(Message::SessionKeyPassphraseChanged)
-                .padding([8, 10])
-                .size(13)
-                .style(ui_style::dialog_input)
-                .secure(true),
-        ]
-        .spacing(6)
+        let saved_key_section: Element<'a, Message> = if saved_keys.is_empty() {
+            column![
+                text("Saved key").size(12).style(ui_style::muted_text),
+                text("No saved keys yet")
+                    .size(12)
+                    .style(ui_style::muted_text),
+            ]
+            .spacing(4)
+            .into()
+        } else {
+            let selected_label = saved_keys
+                .iter()
+                .find(|key| key.path == form_key_path)
+                .map(|key| key.name.as_str());
+
+            let options: Vec<crate::ui::components::dropdown::DropdownOption<String>> = saved_keys
+                .iter()
+                .map(|key| crate::ui::components::dropdown::DropdownOption {
+                    label: key.name.clone(),
+                    value: key.path.clone(),
+                })
+                .collect();
+
+            crate::ui::components::dropdown::render(
+                "Saved key",
+                "Select a saved key",
+                selected_label,
+                options,
+                saved_key_menu_open,
+                false,
+                Message::ToggleSavedKeyMenu,
+                Message::SessionKeyPathChanged,
+                None,
+            )
+        };
+
+        column![saved_key_section].spacing(6)
     };
 
     let form_content = column![
@@ -262,7 +281,7 @@ pub fn render<'a>(
         .align_y(Alignment::Center);
 
     // Assemble dialog content
-    let dialog_content = column![
+    let dialog_body = column![
         header,
         container("").height(12.0),
         tabs,
@@ -279,6 +298,19 @@ pub fn render<'a>(
     .spacing(0)
     .padding(24)
     .width(Length::Fixed(560.0));
+
+    let dialog_content: Element<'a, Message> = if saved_key_menu_open {
+        let dismiss_layer = mouse_area(
+            container(Space::new())
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .on_press(Message::CloseSavedKeyMenu);
+
+        stack![dialog_body, dismiss_layer].into()
+    } else {
+        dialog_body.into()
+    };
 
     container(dialog_content)
         .style(ui_style::dialog_container)

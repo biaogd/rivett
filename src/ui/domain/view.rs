@@ -247,6 +247,7 @@ impl App {
                 let dialog_content = components::session_dialog::render(
                     self.editing_session.as_ref(),
                     &self.saved_sessions,
+                    &self.app_settings.ssh_keys,
                     &self.form_name,
                     &self.form_host,
                     &self.form_port,
@@ -257,6 +258,7 @@ impl App {
                     self.auth_method_password,
                     self.show_password,
                     &self.connection_test_status,
+                    self.saved_key_menu_open,
                     self.validation_error.as_ref(),
                 );
 
