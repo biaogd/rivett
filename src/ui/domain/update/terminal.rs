@@ -285,7 +285,15 @@ pub(in crate::ui) fn handle_runtime_event(
             ..
         }) => {
             let message = {
-                if matches!(
+                if app.ime_focused
+                    && matches!(
+                        key,
+                        iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace)
+                            | iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete)
+                    )
+                {
+                    Message::Ignore
+                } else if matches!(
                     key,
                     iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace)
                 ) {
