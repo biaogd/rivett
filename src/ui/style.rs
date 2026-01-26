@@ -459,6 +459,54 @@ pub fn menu_item_button(_theme: &Theme, status: button::Status) -> button::Style
     style
 }
 
+pub fn breadcrumb_container(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: None,
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 8.0.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+pub fn breadcrumb_button(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let mut style = button::Style {
+            background: if active {
+                Some(Background::Color(color_accent_soft()))
+            } else {
+                None
+            },
+            text_color: if active {
+                color_accent_dark()
+            } else {
+                Color::from_rgb8(44, 44, 46)
+            },
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 6.0.into(),
+            },
+            ..button::Style::default()
+        };
+
+        if let button::Status::Hovered = status {
+            style.background = Some(Background::Color(if active {
+                color_accent_soft()
+            } else {
+                color_panel_elevated()
+            }));
+            if !active {
+                style.text_color = Color::from_rgb8(28, 28, 30);
+            }
+        }
+
+        style
+    }
+}
+
 pub fn sftp_row_container(selected: bool, hovered: bool) -> impl Fn(&Theme) -> container::Style {
     move |_theme| container::Style {
         background: if selected {

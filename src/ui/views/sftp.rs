@@ -20,6 +20,7 @@ pub fn render<'a>(
     remote_entries: &'a [SftpEntry],
     remote_error: Option<&'a str>,
     remote_loading: bool,
+    session_state: &'a crate::ui::state::SessionState,
     local_selected: Option<&'a str>,
     remote_selected: Option<&'a str>,
     name_column_width: f32,
@@ -37,42 +38,8 @@ pub fn render<'a>(
     let local_scroll_id = Id::new("sftp-local-list");
     let remote_scroll_id = Id::new("sftp-remote-list");
 
-    let nav_buttons = || {
-        row![
-            button(text("<").size(12))
-                .padding([4, 8])
-                .style(ui_style::icon_button)
-                .on_press(Message::Ignore),
-            button(text(">").size(12))
-                .padding([4, 8])
-                .style(ui_style::icon_button)
-                .on_press(Message::Ignore),
-            button(text("^").size(12))
-                .padding([4, 8])
-                .style(ui_style::icon_button)
-                .on_press(Message::Ignore),
-            button(text("R").size(12))
-                .padding([4, 8])
-                .style(ui_style::icon_button)
-                .on_press(Message::Ignore),
-        ]
-        .spacing(4)
-        .align_y(Alignment::Center)
-    };
-
-    let local_path_input = text_input("Local path", local_path)
-        .on_input(Message::SftpLocalPathChanged)
-        .padding([6, 10])
-        .size(13)
-        .style(ui_style::dialog_input)
-        .width(Length::Fill);
-
-    let remote_path_input = text_input("Remote path", remote_path)
-        .on_input(Message::SftpRemotePathChanged)
-        .padding([6, 10])
-        .size(13)
-        .style(ui_style::dialog_input)
-        .width(Length::Fill);
+    let local_breadcrumbs = breadcrumb_row(local_path, panel_width, Message::SftpLocalPathChanged);
+    let remote_breadcrumbs = breadcrumb_row(remote_path, panel_width, Message::SftpRemotePathChanged);
 
     let local_list = if let Some(error) = local_error {
         scrollable(
@@ -257,10 +224,9 @@ pub fn render<'a>(
         row![
             text("Local").size(14).style(ui_style::header_text),
             container("").width(Length::Fill),
-            nav_buttons(),
         ]
         .align_y(Alignment::Center),
-        local_path_input,
+        local_breadcrumbs,
         container(local_list_panel)
             .padding([6, 0])
             .width(Length::Fill)
@@ -295,10 +261,9 @@ pub fn render<'a>(
         row![
             text("Remote").size(14).style(ui_style::header_text),
             container("").width(Length::Fill),
-            nav_buttons(),
         ]
         .align_y(Alignment::Center),
-        remote_path_input,
+        remote_breadcrumbs,
         container(remote_list_panel)
             .padding([6, 0])
             .width(Length::Fill)
@@ -362,7 +327,12 @@ pub fn render<'a>(
             text(if remote_loading {
                 "Loading"
             } else {
-                "Disconnected"
+                match session_state {
+                    crate::ui::state::SessionState::Connected => "Connected",
+                    crate::ui::state::SessionState::Connecting(_) => "Connecting",
+                    crate::ui::state::SessionState::Failed(_) => "Failed",
+                    crate::ui::state::SessionState::Disconnected => "Disconnected",
+                }
             })
             .size(12)
             .style(ui_style::muted_text),
@@ -718,6 +688,7 @@ const FOLDER_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fi
 const IMAGE_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="5" width="16" height="14" rx="2" stroke="#AF52DE" stroke-width="1.6"/><path d="M8 13l3-3 5 6" stroke="#AF52DE" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="9" r="1.5" fill="#AF52DE"/></svg>"###;
 const ARCHIVE_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="3" width="12" height="4" stroke="#FF9F0A" stroke-width="1.6"/><rect x="6" y="7" width="12" height="14" rx="2" stroke="#FF9F0A" stroke-width="1.6"/><path d="M12 10v8" stroke="#FF9F0A" stroke-width="1.6"/><path d="M10 12h4" stroke="#FF9F0A" stroke-width="1.6"/></svg>"###;
 const EXEC_SVG: &str = r###"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="16" height="16" rx="3" stroke="#34C759" stroke-width="1.6"/><path d="M9 8l6 4-6 4V8Z" fill="#34C759"/></svg>"###;
+const ROOT_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 11.5L12 6l7 5.5V19a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7.5Z" stroke="#1C1C1E" stroke-width="1.7" stroke-linejoin="round"/></svg>"###;
 
 const CHECK_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#34C759" stroke-width="2.0"/><path d="M8.2 12.2l2.4 2.5 5.2-5.4" stroke="#34C759" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/></svg>"###;
 const ERROR_SVG: &str = r###"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#FF453A" stroke-width="2.0"/><path d="M12 7.2v6.4" stroke="#FF453A" stroke-width="2.0" stroke-linecap="round"/><circle cx="12" cy="16.8" r="1.2" fill="#FF453A"/></svg>"###;
@@ -803,6 +774,203 @@ fn file_row(
     // Start drag/select on MouseDown
 
     row_area.into()
+}
+
+fn breadcrumb_row<'a>(
+    path: &str,
+    max_width: f32,
+    on_press: fn(String) -> Message,
+) -> Element<'a, Message> {
+    let mut crumbs = collapse_breadcrumbs(breadcrumb_segments(path));
+    let available_width = (max_width - 16.0).max(120.0);
+    apply_breadcrumb_truncation(&mut crumbs, available_width);
+
+    let crumb_count = crumbs.len();
+    let mut row = row![].spacing(2).align_y(Alignment::Center);
+
+    for (index, crumb) in crumbs.into_iter().enumerate() {
+        let is_last = index + 1 == crumb_count;
+        let label_size = if is_last { 14 } else { 13 };
+        match crumb.kind {
+            CrumbKind::RootIcon => {
+                let icon: iced::widget::Svg<'_, iced::Theme> =
+                    svg(svg::Handle::from_memory(ROOT_SVG.as_bytes()))
+                        .width(Length::Fixed(18.0))
+                        .height(Length::Fixed(18.0));
+                row = row.push(
+                    button(icon)
+                        .padding([4, 8])
+                        .style(ui_style::breadcrumb_button(is_last))
+                        .on_press(on_press(crumb.target)),
+                );
+            }
+            CrumbKind::Ellipsis => {
+                row = row.push(text("…").size(13).style(ui_style::muted_text));
+            }
+            CrumbKind::Label => {
+                row = row.push(
+                    button(text(crumb.label).size(label_size))
+                        .padding([4, 8])
+                        .style(ui_style::breadcrumb_button(is_last))
+                        .on_press(on_press(crumb.target)),
+                );
+            }
+        }
+
+        if !is_last {
+            row = row.push(
+                text(">")
+                    .size(12)
+                    .style(ui_style::muted_text)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..iced::Font::DEFAULT
+                    }),
+            );
+        }
+    }
+
+    container(row)
+        .padding([4, 6])
+        .width(Length::Fill)
+        .style(ui_style::breadcrumb_container)
+        .into()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CrumbKind {
+    RootIcon,
+    Ellipsis,
+    Label,
+}
+
+#[derive(Clone, Debug)]
+struct BreadcrumbCrumb {
+    label: String,
+    target: String,
+    kind: CrumbKind,
+}
+
+fn collapse_breadcrumbs(crumbs: Vec<(String, String)>) -> Vec<BreadcrumbCrumb> {
+    let mut mapped: Vec<BreadcrumbCrumb> = crumbs
+        .into_iter()
+        .map(|(label, target)| BreadcrumbCrumb {
+            kind: if label == "/" {
+                CrumbKind::RootIcon
+            } else {
+                CrumbKind::Label
+            },
+            label,
+            target,
+        })
+        .collect();
+
+    if mapped.len() <= 3 {
+        return mapped;
+    }
+
+    let mut result: Vec<BreadcrumbCrumb> = Vec::new();
+    if matches!(mapped.first().map(|c| c.kind), Some(CrumbKind::RootIcon)) {
+        result.push(mapped.remove(0));
+    } else if let Some(crumb) = mapped.first() {
+        if crumb.label == "." && crumb.kind == CrumbKind::Label {
+            result.push(mapped.remove(0));
+        }
+    }
+
+    result.push(BreadcrumbCrumb {
+        label: "…".to_string(),
+        target: String::new(),
+        kind: CrumbKind::Ellipsis,
+    });
+
+    let tail_start = mapped.len().saturating_sub(3);
+    result.extend(mapped.drain(tail_start..));
+
+    result
+}
+
+fn apply_breadcrumb_truncation(crumbs: &mut [BreadcrumbCrumb], available_width: f32) {
+    let label_count = crumbs
+        .iter()
+        .filter(|crumb| crumb.kind == CrumbKind::Label)
+        .count();
+    if label_count == 0 {
+        return;
+    }
+
+    let mut fixed_width = 0.0;
+    for crumb in crumbs.iter() {
+        match crumb.kind {
+            CrumbKind::RootIcon => fixed_width += 34.0,
+            CrumbKind::Ellipsis => fixed_width += 10.0,
+            CrumbKind::Label => fixed_width += 16.0,
+        }
+    }
+    fixed_width += (crumbs.len().saturating_sub(1) as f32) * 10.0;
+
+    let remaining = (available_width - fixed_width).max(36.0);
+    let max_label_width = (remaining / label_count as f32).max(40.0);
+
+    let total = crumbs.len();
+    for (index, crumb) in crumbs.iter_mut().enumerate() {
+        if crumb.kind == CrumbKind::Label {
+            let is_last = index + 1 == total;
+            let font_size = if is_last { 14.0 } else { 13.0 };
+            crumb.label = truncate_name(&crumb.label, max_label_width, font_size);
+        }
+    }
+}
+
+fn breadcrumb_segments(path: &str) -> Vec<(String, String)> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return vec![(".".to_string(), ".".to_string())];
+    }
+    if trimmed == "." {
+        return vec![(".".to_string(), ".".to_string())];
+    }
+
+    let is_absolute = trimmed.starts_with('/');
+    let has_dot_prefix = !is_absolute && trimmed.starts_with("./");
+    let rest = if is_absolute {
+        trimmed.trim_start_matches('/')
+    } else if has_dot_prefix {
+        trimmed.trim_start_matches("./")
+    } else {
+        trimmed
+    };
+
+    let mut segments: Vec<(String, String)> = Vec::new();
+    let mut current = String::new();
+
+    if is_absolute {
+        current.push('/');
+        segments.push(("/".to_string(), current.clone()));
+    } else if has_dot_prefix {
+        current.push('.');
+        segments.push((".".to_string(), current.clone()));
+    }
+
+    for part in rest.split('/').filter(|part| !part.is_empty()) {
+        if current == "/" {
+            current = format!("/{}", part);
+        } else if current == "." {
+            current = format!("./{}", part);
+        } else if current.is_empty() {
+            current = part.to_string();
+        } else {
+            current = format!("{}/{}", current, part);
+        }
+
+        segments.push((part.to_string(), current.clone()));
+    }
+
+    if segments.is_empty() {
+        vec![(trimmed.to_string(), trimmed.to_string())]
+    } else {
+        segments
+    }
 }
 
 fn format_size(bytes: u64) -> String {

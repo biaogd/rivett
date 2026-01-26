@@ -124,6 +124,7 @@ impl App {
                 &sftp_state.remote_entries,
                 sftp_state.remote_error.as_deref(),
                 sftp_state.remote_loading,
+                &self.tabs[self.active_tab].state,
                 sftp_state.local_selected.as_deref(),
                 sftp_state.remote_selected.as_deref(),
                 sftp_name_column_width(self.sftp_panel_width),
