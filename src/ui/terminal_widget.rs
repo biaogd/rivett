@@ -1,6 +1,7 @@
 use iced::mouse;
 use iced::widget::canvas::{self, Cache, Canvas, Frame, Geometry, Text};
 use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
+use alacritty_terminal::vte::ansi::CursorShape;
 use iced::font::{Style as FontStyle, Weight as FontWeight};
 
 use crate::terminal::TerminalEmulator;
@@ -233,7 +234,8 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
         let cell_width = cell_width(self.font_size);
         let cell_height = cell_height(self.font_size);
         let terminal_font_family = crate::platform::default_terminal_font_family();
-        let (cursor_col, cursor_row) = self.emulator.cursor_position();
+        let (cursor_col, cursor_row, cursor_shape, cursor_rgb) =
+            self.emulator.cursor_render_info();
         let preedit_len = self.preedit.map(|s| s.chars().count()).unwrap_or(0);
         let (_, _, screen_lines) = self.emulator.get_scroll_state();
         let visible_lines = screen_lines.min(self.line_caches.len());
@@ -252,11 +254,6 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 self.emulator
                     .render_line(line, |col, _line, cell, is_selected| {
                         use alacritty_terminal::term::cell::Flags;
-
-                        // Skip wide char spacers (the second half of a wide char)
-                        if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
-                            return;
-                        }
 
                         let c = cell.c;
                         let fg = cell.fg;
@@ -309,6 +306,12 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                                 Size::new(width, cell_height),
                                 if is_selected { selection_bg } else { bg_color },
                             );
+                        }
+
+                        // Skip drawing text for spacer half, but keep background above.
+                        if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                            last_col = col as i32;
+                            return;
                         }
 
                         let break_span = fg_color != current_fg
@@ -390,12 +393,60 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
         let mut overlay = Frame::new(renderer, bounds.size());
         let cursor_x = (cursor_col + preedit_len) as f32 * cell_width;
         let cursor_y = cursor_row as f32 * cell_height;
+        let cursor_color = cursor_rgb
+            .map(|rgb| Color::from_rgb8(rgb.r, rgb.g, rgb.b))
+            .unwrap_or(Color::from_rgba8(0, 0, 0, 0.5));
 
-        overlay.fill_rectangle(
-            Point::new(cursor_x, cursor_y),
-            Size::new(cell_width, cell_height),
-            Color::from_rgba8(0, 0, 0, 0.3),
-        );
+        match cursor_shape {
+            CursorShape::Hidden => {}
+            CursorShape::Block => {
+                overlay.fill_rectangle(
+                    Point::new(cursor_x, cursor_y),
+                    Size::new(cell_width, cell_height),
+                    Color {
+                        a: 0.4,
+                        ..cursor_color
+                    },
+                );
+            }
+            CursorShape::Underline => {
+                overlay.fill_rectangle(
+                    Point::new(cursor_x, cursor_y + cell_height - 2.0),
+                    Size::new(cell_width, 2.0),
+                    cursor_color,
+                );
+            }
+            CursorShape::Beam => {
+                overlay.fill_rectangle(
+                    Point::new(cursor_x, cursor_y),
+                    Size::new(2.0, cell_height),
+                    cursor_color,
+                );
+            }
+            CursorShape::HollowBlock => {
+                let line = 1.0;
+                overlay.fill_rectangle(
+                    Point::new(cursor_x, cursor_y),
+                    Size::new(cell_width, line),
+                    cursor_color,
+                );
+                overlay.fill_rectangle(
+                    Point::new(cursor_x, cursor_y + cell_height - line),
+                    Size::new(cell_width, line),
+                    cursor_color,
+                );
+                overlay.fill_rectangle(
+                    Point::new(cursor_x, cursor_y),
+                    Size::new(line, cell_height),
+                    cursor_color,
+                );
+                overlay.fill_rectangle(
+                    Point::new(cursor_x + cell_width - line, cursor_y),
+                    Size::new(line, cell_height),
+                    cursor_color,
+                );
+            }
+        }
 
         if let Some(preedit) = self.preedit {
             if !preedit.is_empty() {

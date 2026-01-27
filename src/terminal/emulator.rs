@@ -2,6 +2,7 @@ use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{Config, Term, TermDamage};
 use alacritty_terminal::vte::ansi;
+use alacritty_terminal::vte::ansi::{CursorShape, NamedColor, Rgb};
 use parking_lot::Mutex;
 use std::fmt;
 use std::sync::Arc;
@@ -194,6 +195,14 @@ impl TerminalEmulator {
         let content = term.renderable_content();
         let cursor = content.cursor;
         (cursor.point.column.0 as usize, cursor.point.line.0 as usize)
+    }
+
+    pub fn cursor_render_info(&self) -> (usize, usize, CursorShape, Option<Rgb>) {
+        let term = self.term.lock();
+        let content = term.renderable_content();
+        let cursor = content.cursor;
+        let color = content.colors[NamedColor::Cursor];
+        (cursor.point.column.0 as usize, cursor.point.line.0 as usize, cursor.shape, color)
     }
 
     /// Returns (total_lines, view_offset, screen_lines)
