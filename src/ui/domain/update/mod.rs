@@ -167,6 +167,12 @@ impl App {
                     return sessions::apply_port_forwards(self, session_id);
                 }
             }
+            Message::OpenUrl(url) => {
+                return Task::perform(
+                    async move { crate::platform::open_url(&url) },
+                    |_| Message::Ignore,
+                );
+            }
             Message::PortForwardStatusUpdated(session_id, statuses) => {
                 self.port_forward_statuses
                     .insert(session_id, statuses.into_iter().collect());

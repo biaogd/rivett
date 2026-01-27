@@ -54,6 +54,7 @@ impl<'a> TerminalView<'a> {
 pub struct TerminalWidgetState {
     is_dragging: bool,
     last_click_time: Option<std::time::Instant>,
+    hover_link: Option<String>,
 }
 
 impl Default for TerminalWidgetState {
@@ -61,6 +62,7 @@ impl Default for TerminalWidgetState {
         Self {
             is_dragging: false,
             last_click_time: None,
+            hover_link: None,
         }
     }
 }
@@ -90,6 +92,11 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
             match mouse_event {
                 mouse::Event::ButtonPressed(mouse::Button::Left) => {
                     if is_over {
+                        if let Some(link) = state.hover_link.clone() {
+                            return Some(iced::widget::canvas::Action::publish(
+                                Message::OpenUrl(link),
+                            ));
+                        }
                         if let Some(position) = cursor.position_in(bounds) {
                             let col = (position.x / cell_width(self.font_size)) as usize;
                             let line = (position.y / cell_height(self.font_size)) as usize;
@@ -136,6 +143,14 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                                 Message::TerminalMouseDrag(col, line),
                             ));
                         }
+                    } else if is_over {
+                        if let Some(position) = cursor.position_in(bounds) {
+                            let col = (position.x / cell_width(self.font_size)) as usize;
+                            let line = (position.y / cell_height(self.font_size)) as usize;
+                            state.hover_link = self.emulator.hyperlink_at(col, line);
+                        }
+                    } else {
+                        state.hover_link = None;
                     }
                 }
                 mouse::Event::ButtonReleased(mouse::Button::Left) => {
@@ -157,11 +172,14 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
 
     fn mouse_interaction(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> mouse::Interaction {
         if cursor.is_over(bounds) {
+            if state.hover_link.is_some() {
+                return mouse::Interaction::Pointer;
+            }
             mouse::Interaction::Text
         } else {
             mouse::Interaction::default()
@@ -501,9 +519,44 @@ fn convert_color(color: alacritty_terminal::vte::ansi::Color) -> Color {
             _ => Color::BLACK,
         },
         AnsiColor::Spec(rgb) => Color::from_rgb8(rgb.r, rgb.g, rgb.b),
-        AnsiColor::Indexed(_idx) => {
-            // Basic 256 color mapping logic or fallback
-            Color::from_rgb8(50, 50, 50)
+        AnsiColor::Indexed(idx) => convert_indexed_color(idx),
+    }
+}
+
+fn convert_indexed_color(idx: u8) -> Color {
+    // 0-15: standard ANSI colors (rough defaults)
+    const ANSI_16: [Color; 16] = [
+        Color::from_rgb8(0, 0, 0),       // 0 black
+        Color::from_rgb8(205, 49, 49),   // 1 red
+        Color::from_rgb8(13, 188, 121),  // 2 green
+        Color::from_rgb8(180, 160, 0),   // 3 yellow
+        Color::from_rgb8(36, 114, 200),  // 4 blue
+        Color::from_rgb8(188, 63, 188),  // 5 magenta
+        Color::from_rgb8(0, 150, 200),   // 6 cyan
+        Color::from_rgb8(229, 229, 229), // 7 white (light gray)
+        Color::from_rgb8(85, 85, 85),    // 8 bright black (gray)
+        Color::from_rgb8(255, 95, 95),   // 9 bright red
+        Color::from_rgb8(100, 215, 140), // 10 bright green
+        Color::from_rgb8(255, 215, 95),  // 11 bright yellow
+        Color::from_rgb8(95, 175, 255),  // 12 bright blue
+        Color::from_rgb8(215, 95, 255),  // 13 bright magenta
+        Color::from_rgb8(95, 215, 255),  // 14 bright cyan
+        Color::from_rgb8(245, 245, 245), // 15 bright white
+    ];
+
+    match idx {
+        0..=15 => ANSI_16[idx as usize],
+        16..=231 => {
+            let idx = idx - 16;
+            let r = idx / 36;
+            let g = (idx % 36) / 6;
+            let b = idx % 6;
+            let scale = [0, 95, 135, 175, 215, 255];
+            Color::from_rgb8(scale[r as usize], scale[g as usize], scale[b as usize])
+        }
+        232..=255 => {
+            let gray = 8 + (idx - 232) * 10;
+            Color::from_rgb8(gray, gray, gray)
         }
     }
 }

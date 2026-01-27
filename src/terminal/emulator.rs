@@ -205,6 +205,31 @@ impl TerminalEmulator {
         (cursor.point.column.0 as usize, cursor.point.line.0 as usize, cursor.shape, color)
     }
 
+    pub fn hyperlink_at(&self, col: usize, line: usize) -> Option<String> {
+        use alacritty_terminal::index::{Column, Line};
+
+        let term = self.term.lock();
+        let grid = term.grid();
+        let cols = grid.columns();
+        let rows = grid.screen_lines();
+        if col >= cols || line >= rows {
+            return None;
+        }
+        let display_offset = grid.display_offset();
+        let grid_line = Line::from(line) - display_offset;
+        let row = &grid[grid_line];
+
+        let cell = &row[Column(col)];
+        if cell.flags.contains(alacritty_terminal::term::cell::Flags::WIDE_CHAR_SPACER)
+            && col > 0
+        {
+            return row[Column(col - 1)]
+                .hyperlink()
+                .map(|link| link.uri().to_string());
+        }
+        cell.hyperlink().map(|link| link.uri().to_string())
+    }
+
     /// Returns (total_lines, view_offset, screen_lines)
     /// view_offset is the number of lines from the bottom of history to the bottom of the viewport.
     /// 0 means we are at the bottom.

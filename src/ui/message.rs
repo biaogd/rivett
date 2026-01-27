@@ -132,6 +132,7 @@ pub enum Message {
     WindowResized(u32, u32),
     WindowOpened(iced::window::Id),
     WindowClosed(iced::window::Id),
+    OpenUrl(String),
     ScrollWheel(f32),         // delta in lines
     RetryConnection(usize),   // tab index to retry
     EditSessionConfig(usize), // tab index to edit

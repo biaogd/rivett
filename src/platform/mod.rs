@@ -49,3 +49,43 @@ pub fn default_terminal_font_family() -> &'static str {
         "monospace"
     }
 }
+
+pub fn open_url(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut cmd = std::process::Command::new("open");
+        cmd.arg(url);
+        cmd
+    };
+
+    #[cfg(target_os = "linux")]
+    let mut cmd = {
+        let mut cmd = std::process::Command::new("xdg-open");
+        cmd.arg(url);
+        cmd
+    };
+
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/C", "start", "", url]);
+        cmd
+    };
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    let mut cmd = {
+        let mut cmd = std::process::Command::new("xdg-open");
+        cmd.arg(url);
+        cmd
+    };
+
+    cmd.status()
+        .map_err(|e| e.to_string())
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err("Failed to open URL".to_string())
+            }
+        })
+}
