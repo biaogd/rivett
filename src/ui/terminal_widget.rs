@@ -257,10 +257,15 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
 
                         let c = cell.c;
                         let fg = cell.fg;
+                        let bg = cell.bg;
 
                         let x = col as f32 * cell_width;
                         let y = line as f32 * cell_height;
-                        let color = convert_color(fg);
+                        let mut fg_color = convert_color(fg);
+                        let mut bg_color = convert_color(bg);
+                        if cell.flags.contains(Flags::INVERSE) {
+                            std::mem::swap(&mut fg_color, &mut bg_color);
+                        }
 
                         // Only render selection background for non-space characters
                         // For wide chars, we might want to render background for double width?
@@ -269,21 +274,25 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         // we won't draw background there?
                         // Actually, if we skip render for spacer, we won't draw background for the second half.
                         // We should probably draw double width background for WIDE_CHAR.
-                        if is_selected && !c.is_whitespace() {
-                            let width = if cell.flags.contains(Flags::WIDE_CHAR) {
-                                cell_width * 2.0
-                            } else {
-                                cell_width
-                            };
+                        let width = if cell.flags.contains(Flags::WIDE_CHAR) {
+                            cell_width * 2.0
+                        } else {
+                            cell_width
+                        };
 
+                        let selection_bg = Color::from_rgba8(100, 100, 200, 0.5);
+                        let should_draw_bg =
+                            is_selected || bg_color != Color::WHITE;
+                        if should_draw_bg {
                             frame.fill_rectangle(
                                 Point::new(x, y),
                                 Size::new(width, cell_height),
-                                Color::from_rgba8(100, 100, 200, 0.5),
+                                if is_selected { selection_bg } else { bg_color },
                             );
                         }
 
-                        let break_span = color != current_fg || col as i32 != last_col + 1;
+                        let break_span =
+                            fg_color != current_fg || col as i32 != last_col + 1;
                         if break_span && !current_text.is_empty() {
                             frame.fill_text(Text {
                                 content: current_text.clone(),
@@ -301,7 +310,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
 
                         if current_text.is_empty() {
                             start_pos = Point::new(x, y);
-                            current_fg = color;
+                            current_fg = fg_color;
                         }
 
                         current_text.push(c);
