@@ -1,6 +1,7 @@
 use iced::mouse;
 use iced::widget::canvas::{self, Cache, Canvas, Frame, Geometry, Text};
 use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
+use iced::font::{Style as FontStyle, Weight as FontWeight};
 
 use crate::terminal::TerminalEmulator;
 use crate::ui::Message;
@@ -243,6 +244,8 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 // --- Batched Text Rendering (per line) ---
                 let mut current_text = String::new();
                 let mut current_fg = Color::BLACK;
+                let mut current_weight = FontWeight::Normal;
+                let mut current_style = FontStyle::Normal;
                 let mut start_pos = Point::ORIGIN;
                 let mut last_col = -1;
 
@@ -266,6 +269,23 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         if cell.flags.contains(Flags::INVERSE) {
                             std::mem::swap(&mut fg_color, &mut bg_color);
                         }
+                        if cell.flags.contains(Flags::DIM) {
+                            fg_color = Color {
+                                a: fg_color.a * 0.6,
+                                ..fg_color
+                            };
+                        }
+
+                        let weight = if cell.flags.contains(Flags::BOLD) {
+                            FontWeight::Bold
+                        } else {
+                            FontWeight::Normal
+                        };
+                        let style = if cell.flags.contains(Flags::ITALIC) {
+                            FontStyle::Italic
+                        } else {
+                            FontStyle::Normal
+                        };
 
                         // Only render selection background for non-space characters
                         // For wide chars, we might want to render background for double width?
@@ -291,8 +311,10 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                             );
                         }
 
-                        let break_span =
-                            fg_color != current_fg || col as i32 != last_col + 1;
+                        let break_span = fg_color != current_fg
+                            || weight != current_weight
+                            || style != current_style
+                            || col as i32 != last_col + 1;
                         if break_span && !current_text.is_empty() {
                             frame.fill_text(Text {
                                 content: current_text.clone(),
@@ -301,6 +323,8 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                                 size: self.font_size.into(),
                                 font: iced::Font {
                                     family: iced::font::Family::Name(terminal_font_family),
+                                    weight: current_weight,
+                                    style: current_style,
                                     ..iced::Font::DEFAULT
                                 },
                                 ..Text::default()
@@ -311,6 +335,8 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         if current_text.is_empty() {
                             start_pos = Point::new(x, y);
                             current_fg = fg_color;
+                            current_weight = weight;
+                            current_style = style;
                         }
 
                         current_text.push(c);
@@ -323,6 +349,21 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         // Skip 1.
                         // Draw 2. break_span check: 2 != 0 + 1. True. Span breaks.
                         // This is actually FINE. It means wide chars might break batching, but that's safe.
+                        if cell.flags.contains(Flags::UNDERLINE) {
+                            frame.fill_rectangle(
+                                Point::new(x, y + cell_height - 2.0),
+                                Size::new(width, 1.0),
+                                fg_color,
+                            );
+                        }
+                        if cell.flags.contains(Flags::STRIKEOUT) {
+                            frame.fill_rectangle(
+                                Point::new(x, y + cell_height / 2.0),
+                                Size::new(width, 1.0),
+                                fg_color,
+                            );
+                        }
+
                         last_col = col as i32;
                     });
 
@@ -334,6 +375,8 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         size: self.font_size.into(),
                         font: iced::Font {
                             family: iced::font::Family::Name(terminal_font_family),
+                            weight: current_weight,
+                            style: current_style,
                             ..iced::Font::DEFAULT
                         },
                         ..Text::default()
