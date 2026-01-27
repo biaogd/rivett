@@ -59,6 +59,13 @@ pub enum ConnectionTestStatus {
     Failed(String),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum PortForwardStatus {
+    Pending,
+    Active,
+    Error(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct SftpEntry {
     pub name: String,

@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use crate::session::SessionConfig;
 use crate::session::config::PortForwardRule;
 use crate::ui::message::{ActiveView, Message, SessionDialogTab};
-use crate::ui::state::{ConnectionTestStatus, SessionTab, SftpState};
+use crate::ui::state::{ConnectionTestStatus, PortForwardStatus, SessionTab, SftpState};
 use crate::ui::App;
 use uuid::Uuid;
 
@@ -116,7 +116,6 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::SaveSession => {
-            let mut saved_session_id = None;
             if let Some(ref mut session) = app.editing_session {
                 if app.form_name.trim().is_empty() {
                     app.validation_error = Some("Session name is required".to_string());
@@ -192,7 +191,6 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     return Task::none();
                 }
 
-                saved_session_id = Some(session.id.clone());
                 app.editing_session = None;
                 app.validation_error = None;
                 app.saved_key_menu_open = false;
@@ -203,11 +201,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.port_forward_remote_port.clear();
                 app.port_forward_error = None;
             }
-            if let Some(session_id) = saved_session_id {
-                apply_port_forwards(app, &session_id)
-            } else {
-                Task::none()
-            }
+            Task::none()
         }
         Message::CancelSessionEdit => {
             app.editing_session = None;
@@ -485,7 +479,6 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
 
-            let mut updated_saved = false;
             if let Some(session) = app
                 .editing_session
                 .as_mut()
@@ -519,7 +512,6 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.port_forward_error = Some(format!("Failed to save: {}", err));
                     return Task::none();
                 }
-                updated_saved = true;
             }
 
             app.port_forward_local_port.clear();
@@ -527,9 +519,6 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.port_forward_remote_host.clear();
             app.port_forward_remote_port.clear();
             app.port_forward_error = None;
-            if updated_saved {
-                return apply_port_forwards(app, &session_id);
-            }
             Task::none()
         }
         Message::TogglePortForward(rule_id) => {
@@ -538,7 +527,6 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 None => return Task::none(),
             };
 
-            let mut updated_saved = false;
             if let Some(session) = app
                 .editing_session
                 .as_mut()
@@ -560,11 +548,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     {
                         app.port_forward_error = Some(format!("Failed to save: {}", err));
                     }
-                    updated_saved = true;
                 }
-            }
-            if updated_saved {
-                return apply_port_forwards(app, &session_id);
             }
             Task::none()
         }
@@ -574,7 +558,6 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 None => return Task::none(),
             };
 
-            let mut updated_saved = false;
             if let Some(session) = app
                 .editing_session
                 .as_mut()
@@ -593,10 +576,6 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 {
                     app.port_forward_error = Some(format!("Failed to save: {}", err));
                 }
-                updated_saved = true;
-            }
-            if updated_saved {
-                return apply_port_forwards(app, &session_id);
             }
             Task::none()
         }
@@ -656,7 +635,7 @@ fn start_edit_session(app: &mut App, session: SessionConfig, tab: SessionDialogT
 }
 
 pub(in crate::ui) fn apply_port_forwards(app: &App, session_id: &str) -> Task<Message> {
-    let rules = match app
+    let mut rules = match app
         .saved_sessions
         .iter()
         .find(|session| session.id == session_id)
@@ -664,6 +643,14 @@ pub(in crate::ui) fn apply_port_forwards(app: &App, session_id: &str) -> Task<Me
         Some(session) => session.port_forwards.clone(),
         None => return Task::none(),
     };
+    for rule in &mut rules {
+        rule.enabled = true;
+    }
+    tracing::info!(
+        "port forward apply {} rules for session {}",
+        rules.len(),
+        session_id
+    );
 
     let mut tasks = Vec::new();
     for tab in &app.tabs {
@@ -671,14 +658,25 @@ pub(in crate::ui) fn apply_port_forwards(app: &App, session_id: &str) -> Task<Me
             if let Some(session) = &tab.ssh_handle {
                 let session = session.clone();
                 let rules = rules.clone();
+                let session_id = session_id.to_string();
                 tasks.push(Task::perform(
                     async move {
                         let mut guard = session.lock().await;
-                        if let Err(err) = guard.sync_port_forwards(&rules).await {
-                            tracing::warn!("port forward apply failed: {}", err);
-                        }
+                        let results = guard.sync_port_forwards(&rules).await;
+                        let statuses = rules
+                            .into_iter()
+                            .map(|rule| {
+                                let status = if let Some(Err(err)) = results.get(&rule.id) {
+                                    PortForwardStatus::Error(err.clone())
+                                } else {
+                                    PortForwardStatus::Active
+                                };
+                                (rule.id, status)
+                            })
+                            .collect::<Vec<_>>();
+                        (session_id, statuses)
                     },
-                    |_| Message::Ignore,
+                    |(session_id, statuses)| Message::PortForwardStatusUpdated(session_id, statuses),
                 ));
             }
         }

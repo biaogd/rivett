@@ -9,9 +9,10 @@ pub fn render<'a>(
     active_tab: usize,
     active_view: ActiveView,
     sftp_panel_open: bool,
+    port_forward_panel_open: bool,
 ) -> Element<'a, Message> {
     let current_tab = tabs.get(active_tab);
-    let (status_left, connection_label, sftp_enabled) = if let Some(tab) = current_tab {
+    let (status_left, connection_label, sftp_enabled, port_forward_id) = if let Some(tab) = current_tab {
         match active_view {
             ActiveView::Terminal => {
                 let is_local = matches!(
@@ -19,14 +20,19 @@ pub fn render<'a>(
                     Some(crate::core::backend::SessionBackend::Local { .. })
                 );
                 let label = if is_local { "Local" } else { "SSH" };
-                (tab.title.to_string(), label, !is_local)
+                (
+                    tab.title.to_string(),
+                    label,
+                    !is_local,
+                    tab.sftp_key.clone(),
+                )
             }
-            ActiveView::SessionManager => ("Session Manager".to_string(), "", false),
+            ActiveView::SessionManager => ("Session Manager".to_string(), "", false, None),
         }
     } else {
         match active_view {
-            ActiveView::SessionManager => ("Session Manager".to_string(), "", false),
-            ActiveView::Terminal => ("No active session".to_string(), "", false),
+            ActiveView::SessionManager => ("Session Manager".to_string(), "", false, None),
+            ActiveView::Terminal => ("No active session".to_string(), "", false, None),
         }
     };
 
@@ -43,12 +49,31 @@ pub fn render<'a>(
             .style(ui_style::menu_button_disabled())
             .on_press(Message::Ignore)
     };
+    let port_forward_button = if sftp_enabled {
+        if port_forward_id.is_some() {
+            button(text("Forward").size(12))
+                .padding([4, 10])
+                .style(ui_style::menu_button(port_forward_panel_open))
+                .on_press(Message::TogglePortForwardPanel)
+        } else {
+            button(text("Forward").size(12))
+                .padding([4, 10])
+                .style(ui_style::menu_button_disabled())
+                .on_press(Message::Ignore)
+        }
+    } else {
+        button(text("Forward").size(12))
+            .padding([4, 10])
+            .style(ui_style::menu_button_disabled())
+            .on_press(Message::Ignore)
+    };
 
     let status_bar = row![
         menu_button,
         text(status_left).size(12),
         container("").width(Length::Fill),
         sftp_button,
+        port_forward_button,
         text(connection_label).size(12).style(ui_style::muted_text),
         text("UTF-8").size(12).style(ui_style::muted_text),
         text("│").size(12).style(ui_style::muted_text),

@@ -1,5 +1,5 @@
 use crate::terminal::TerminalDamage;
-use crate::ui::state::{SftpContextAction, SftpPane, SftpTransferUpdate};
+use crate::ui::state::{PortForwardStatus, SftpContextAction, SftpPane, SftpTransferUpdate};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -26,6 +26,9 @@ pub enum Message {
     // Menu actions
     ShowSessionManager,
     ToggleSftpPanel,
+    TogglePortForwardPanel,
+    ApplyPortForwards,
+    PortForwardStatusUpdated(String, Vec<(String, PortForwardStatus)>),
     SftpDragStart,                             // Window resize drag
     SftpDragEnd,                               // Window resize drag end
     SftpDragMove(iced::Point),                 // Window resize drag move

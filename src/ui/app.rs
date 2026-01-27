@@ -49,6 +49,8 @@ pub struct App {
     pub(in crate::ui) port_forward_remote_host: String,
     pub(in crate::ui) port_forward_remote_port: String,
     pub(in crate::ui) port_forward_error: Option<String>,
+    pub(in crate::ui) port_forward_statuses:
+        HashMap<String, HashMap<String, crate::ui::state::PortForwardStatus>>,
     pub(in crate::ui) window_width: u32,
     pub(in crate::ui) window_height: u32,
     pub(in crate::ui) last_error: Option<(String, std::time::Instant)>, // (error message, timestamp)
@@ -67,6 +69,7 @@ pub struct App {
     pub(in crate::ui) sftp_panel_open: bool,
     pub(in crate::ui) sftp_panel_width: f32,
     pub(in crate::ui) sftp_panel_initialized: bool,
+    pub(in crate::ui) port_forward_panel_open: bool,
     pub(in crate::ui) sftp_dragging: bool, // Window resizing
     pub(in crate::ui) sftp_file_dragging: Option<(SftpPane, String)>,
     pub(in crate::ui) sftp_drag_position: Option<iced::Point>,
@@ -135,6 +138,7 @@ impl App {
                 port_forward_remote_host: String::new(),
                 port_forward_remote_port: String::new(),
                 port_forward_error: None,
+                port_forward_statuses: HashMap::new(),
                 window_width: 1024, // Default assumption
                 window_height: 768,
                 last_error: None,
@@ -152,6 +156,7 @@ impl App {
                 sftp_panel_open: false,
                 sftp_panel_width: 520.0,
                 sftp_panel_initialized: false,
+                port_forward_panel_open: false,
                 sftp_dragging: false,
                 sftp_file_dragging: None,
                 sftp_drag_position: None,

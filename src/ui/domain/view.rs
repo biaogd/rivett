@@ -8,7 +8,7 @@ use crate::ui::{components, views};
 impl App {
     pub fn view(&self, _window: iced::window::Id) -> Element<'_, Message> {
         use iced::widget::container::transparent;
-        use iced::widget::{Space, button, column, container, row, stack, text_input};
+        use iced::widget::{Space, button, column, container, row, stack, text, text_input};
 
         let mut content = match self.active_view {
             ActiveView::Terminal => views::terminal::render(
@@ -79,6 +79,7 @@ impl App {
             self.active_tab,
             self.active_view,
             self.sftp_panel_open,
+            self.port_forward_panel_open,
         ));
 
         let base_container = container(main_layout.spacing(0).height(Length::Fill))
@@ -165,6 +166,129 @@ impl App {
             content_view
         };
 
+        let main_with_port_forward: Element<'_, Message> = if self.port_forward_panel_open {
+            let session_id = self
+                .tabs
+                .get(self.active_tab)
+                .and_then(|tab| tab.sftp_key.as_ref());
+
+            let (list_content, error_banner): (Element<'_, Message>, Element<'_, Message>) =
+                if let Some(session_id) = session_id {
+                    if let Some(session) = self
+                        .saved_sessions
+                        .iter()
+                        .find(|session| &session.id == session_id)
+                    {
+                        let statuses = self.port_forward_statuses.get(&session.id);
+                        let error_text = statuses.and_then(|map| {
+                            map.values().find_map(|status| match status {
+                                crate::ui::state::PortForwardStatus::Error(msg) => Some(msg),
+                                _ => None,
+                            })
+                        });
+                        let banner = error_text.map_or_else(
+                            || container(Space::new()).height(0.0).into(),
+                            |msg| {
+                                container(
+                                    text(format!("⚠️ {}", msg))
+                                        .size(12)
+                                        .color(iced::Color::from_rgb(0.9, 0.3, 0.3)),
+                                )
+                                .padding(10)
+                                .width(Length::Fill)
+                                .style(ui_style::error_banner)
+                                .into()
+                            },
+                        );
+                        (
+                            components::port_forward_dialog::render_list(session, statuses),
+                            banner,
+                        )
+                    } else {
+                        (
+                            container(
+                                text("No port forwards for this session.")
+                                    .size(12)
+                                    .style(ui_style::muted_text),
+                            )
+                            .into(),
+                            container(Space::new()).height(0.0).into(),
+                        )
+                    }
+                } else {
+                    (
+                        container(
+                            text("No active session.")
+                                .size(12)
+                                .style(ui_style::muted_text),
+                        )
+                        .into(),
+                        container(Space::new()).height(0.0).into(),
+                    )
+                };
+
+            let header = row![
+                column![
+                    text("Port Forwarding").size(16).style(ui_style::header_text),
+                    text("Current session")
+                        .size(12)
+                        .style(ui_style::muted_text),
+                ]
+                .spacing(2),
+                container("").width(Length::Fill),
+                button(text("✕").size(13))
+                    .padding(6)
+                    .style(ui_style::tab_close_button)
+                    .on_press(Message::TogglePortForwardPanel),
+            ]
+            .align_y(Alignment::Center)
+            .spacing(8);
+
+            let apply_row = row![
+                container("").width(Length::Fill),
+                button(text("Apply").size(13))
+                    .padding([6, 14])
+                    .style(ui_style::primary_button_style)
+                    .on_press(Message::ApplyPortForwards),
+            ]
+            .align_y(Alignment::Center);
+
+            let drawer = container(
+                column![
+                    header,
+                    container(list_content).style(ui_style::panel).padding(12),
+                    error_banner,
+                    apply_row
+                ]
+                .spacing(12),
+            )
+            .width(Length::Fixed(420.0))
+            .height(Length::Fill)
+            .padding(12)
+            .style(ui_style::drawer_panel);
+
+            let backdrop = button(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(ui_style::modal_backdrop)
+            .on_press(Message::TogglePortForwardPanel);
+
+            let overlay = container(
+                iced::widget::mouse_area(drawer).on_press(Message::Ignore),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::End);
+
+            stack![main_view, backdrop, overlay].into()
+        } else {
+            main_view
+        };
+
         // Quick Connect overlay
         let view_with_quick_connect = if self.show_quick_connect {
             // Center the popover
@@ -189,9 +313,9 @@ impl App {
             .style(ui_style::modal_backdrop)
             .on_press(Message::ToggleQuickConnect);
 
-            stack![main_view, overlay, popover].into()
+            stack![main_with_port_forward, overlay, popover].into()
         } else {
-            main_view
+            main_with_port_forward
         };
 
         let sftp_state = self.sftp_state_for_tab(self.active_tab).unwrap_or_else(|| {

@@ -80,9 +80,14 @@ impl App {
                 self.active_view = ActiveView::SessionManager;
                 self.editing_session = None;
                 self.active_tab = 0;
+                self.port_forward_panel_open = false;
+                self.sftp_panel_open = false;
             }
             Message::ToggleSftpPanel => {
                 self.sftp_panel_open = !self.sftp_panel_open;
+                if self.sftp_panel_open {
+                    self.port_forward_panel_open = false;
+                }
                 self.sftp_dragging = false;
                 if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
                     state.local_selected = None;
@@ -120,6 +125,39 @@ impl App {
                         return task;
                     }
                 }
+            }
+            Message::TogglePortForwardPanel => {
+                self.port_forward_panel_open = !self.port_forward_panel_open;
+                if self.port_forward_panel_open {
+                    self.sftp_panel_open = false;
+                    self.sftp_dragging = false;
+                }
+            }
+            Message::ApplyPortForwards => {
+                if let Some(session_id) = self
+                    .tabs
+                    .get(self.active_tab)
+                    .and_then(|tab| tab.sftp_key.as_ref())
+                {
+                    if let Some(session) = self
+                        .saved_sessions
+                        .iter()
+                        .find(|session| &session.id == session_id)
+                    {
+                        let mut statuses = Vec::new();
+                        for rule in &session.port_forwards {
+                            let status = crate::ui::state::PortForwardStatus::Pending;
+                            statuses.push((rule.id.clone(), status));
+                        }
+                        self.port_forward_statuses
+                            .insert(session_id.clone(), statuses.into_iter().collect());
+                    }
+                    return sessions::apply_port_forwards(self, session_id);
+                }
+            }
+            Message::PortForwardStatusUpdated(session_id, statuses) => {
+                self.port_forward_statuses
+                    .insert(session_id, statuses.into_iter().collect());
             }
             Message::SftpDragStart => {
                 self.sftp_dragging = true;
@@ -739,11 +777,6 @@ impl App {
                             move |result| Message::ShellOpened(result, tab_index),
                         );
 
-                        let forward_task = tab
-                            .sftp_key
-                            .clone()
-                            .map(|session_id| sessions::apply_port_forwards(self, &session_id));
-
                         // Start reading loop
                         let rx_clone = rx.clone();
                         let read_task = Task::perform(
@@ -766,11 +799,7 @@ impl App {
                             },
                             |(idx, data)| Message::TerminalDataReceived(idx, data),
                         );
-                        let mut tasks = vec![open_shell_task, read_task];
-                        if let Some(task) = forward_task {
-                            tasks.push(task);
-                        }
-                        return Task::batch(tasks);
+                        return Task::batch(vec![open_shell_task, read_task]);
                     }
                 }
                 Err(e) => {

@@ -210,12 +210,59 @@ impl SshSession {
         }
     }
 
-    pub async fn sync_port_forwards(&mut self, rules: &[PortForwardRule]) -> Result<()> {
+    pub async fn sync_port_forwards(
+        &mut self,
+        rules: &[PortForwardRule],
+    ) -> std::collections::HashMap<String, Result<(), String>> {
+        let mut results = std::collections::HashMap::new();
         let mut enabled = std::collections::HashSet::new();
-        for rule in rules.iter().filter(|rule| rule.enabled) {
-            enabled.insert(rule.id.clone());
-            if !self.port_forwards.contains_key(&rule.id) {
-                self.start_port_forward(rule).await?;
+
+        for rule in rules {
+            if rule.enabled {
+                enabled.insert(rule.id.clone());
+                if !self.port_forwards.contains_key(&rule.id) {
+                    tracing::info!(
+                        "port forward {} starting {}:{} -> {}:{}",
+                        rule.id,
+                        rule.local_host,
+                        rule.local_port,
+                        rule.remote_host,
+                        rule.remote_port
+                    );
+                    match self.start_port_forward(rule).await {
+                        Ok(_) => {
+                            results.insert(rule.id.clone(), Ok(()));
+                        }
+                        Err(err) => {
+                            tracing::warn!(
+                                "port forward {} failed: {}",
+                                rule.id,
+                                err
+                            );
+                            results.insert(rule.id.clone(), Err(err.to_string()));
+                        }
+                    }
+                } else {
+                    tracing::info!(
+                        "port forward {} already active {}:{} -> {}:{}",
+                        rule.id,
+                        rule.local_host,
+                        rule.local_port,
+                        rule.remote_host,
+                        rule.remote_port
+                    );
+                    results.insert(rule.id.clone(), Ok(()));
+                }
+            } else {
+                tracing::info!(
+                    "port forward {} disabled {}:{} -> {}:{}",
+                    rule.id,
+                    rule.local_host,
+                    rule.local_port,
+                    rule.remote_host,
+                    rule.remote_port
+                );
+                results.insert(rule.id.clone(), Ok(()));
             }
         }
 
@@ -226,7 +273,7 @@ impl SshSession {
             }
         }
 
-        Ok(())
+        results
     }
 
     async fn start_port_forward(&mut self, rule: &PortForwardRule) -> Result<()> {

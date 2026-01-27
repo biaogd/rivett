@@ -254,7 +254,7 @@ pub fn render<'a>(
             .into()
         },
         |session| {
-            crate::ui::components::port_forward_dialog::render_inline(
+            crate::ui::components::port_forward_dialog::render_manage_inline(
                 session,
                 port_forward_local_host,
                 port_forward_local_port,

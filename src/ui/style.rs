@@ -175,7 +175,7 @@ pub fn form_section(_theme: &Theme) -> container::Style {
 
 pub fn table_header(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(color_panel_alt())),
+        background: Some(Background::Color(color_panel())),
         border: Border {
             color: color_border(),
             width: 1.0,
