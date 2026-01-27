@@ -34,6 +34,8 @@ pub enum AuthMethod {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PortForwardRule {
     pub id: String,
+    #[serde(default)]
+    pub local_host: String,
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,

@@ -4,30 +4,32 @@ use crate::ui::style as ui_style;
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Length};
 
-pub fn render<'a>(
+pub fn render_inline<'a>(
     session: &'a SessionConfig,
+    local_host: &'a str,
     local_port: &'a str,
     remote_host: &'a str,
     remote_port: &'a str,
     error: Option<&'a String>,
 ) -> Element<'a, Message> {
-    let header = row![
-        column![
-            text("Port Forwarding").size(18).style(ui_style::header_text),
-            text(format!("Session: {}", session.name))
-                .size(12)
-                .style(ui_style::muted_text),
-        ]
-        .spacing(3),
-        container("").width(Length::Fill),
-        button(text("✕").size(13))
-            .padding(8)
-            .style(ui_style::tab_close_button)
-            .on_press(Message::ClosePortForwarding),
-    ]
-    .align_y(Alignment::Center)
-    .spacing(12);
+    render_body(
+        session,
+        local_host,
+        local_port,
+        remote_host,
+        remote_port,
+        error,
+    )
+}
 
+fn render_body<'a>(
+    session: &'a SessionConfig,
+    local_host: &'a str,
+    local_port: &'a str,
+    remote_host: &'a str,
+    remote_port: &'a str,
+    error: Option<&'a String>,
+) -> Element<'a, Message> {
     let error_banner = if let Some(err) = error {
         container(
             text(format!("⚠️ {}", err))
@@ -52,88 +54,139 @@ pub fn render<'a>(
         ]
         .spacing(4)
     } else {
+        let header = row![
+            text("Local address")
+                .size(12)
+                .style(ui_style::muted_text)
+                .width(Length::FillPortion(2)),
+            text("Local port")
+                .size(12)
+                .style(ui_style::muted_text)
+                .width(Length::FillPortion(1)),
+            text("Remote host")
+                .size(12)
+                .style(ui_style::muted_text)
+                .width(Length::FillPortion(2)),
+            text("Remote port")
+                .size(12)
+                .style(ui_style::muted_text)
+                .width(Length::FillPortion(1)),
+            text("Actions")
+                .size(12)
+                .style(ui_style::muted_text)
+                .width(Length::Fixed(70.0)),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center);
+
         session
             .port_forwards
             .iter()
-            .fold(column![], |column, rule| {
+            .fold(column![header], |column, rule| {
                 column.push(render_rule_row(rule))
             })
-            .spacing(6)
+            .spacing(8)
     };
 
     let form = column![
         text("Add forward").size(12).style(ui_style::muted_text),
         row![
             column![
+                text("Local address").size(11).style(ui_style::muted_text),
+                text_input("127.0.0.1", local_host)
+                    .on_input(Message::PortForwardLocalHostChanged)
+                    .padding([7, 10])
+                    .size(13)
+                    .style(ui_style::dialog_input)
+                    .width(Length::Fill),
+            ]
+            .spacing(4)
+            .width(Length::FillPortion(2)),
+            container("").width(10.0),
+            column![
                 text("Local port").size(11).style(ui_style::muted_text),
                 text_input("8080", local_port)
                     .on_input(Message::PortForwardLocalPortChanged)
-                    .padding([8, 10])
+                    .padding([7, 10])
                     .size(13)
                     .style(ui_style::dialog_input)
-                    .width(Length::Fixed(110.0)),
+                    .width(Length::Fill),
             ]
-            .spacing(4),
+            .spacing(4)
+            .width(Length::FillPortion(1)),
+            container("").width(10.0),
             column![
                 text("Remote host").size(11).style(ui_style::muted_text),
                 text_input("127.0.0.1", remote_host)
                     .on_input(Message::PortForwardRemoteHostChanged)
-                    .padding([8, 10])
+                    .padding([7, 10])
                     .size(13)
                     .style(ui_style::dialog_input)
-                    .width(Length::Fixed(200.0)),
+                    .width(Length::Fill),
             ]
-            .spacing(4),
+            .spacing(4)
+            .width(Length::FillPortion(2)),
+            container("").width(10.0),
             column![
                 text("Remote port").size(11).style(ui_style::muted_text),
                 text_input("3306", remote_port)
                     .on_input(Message::PortForwardRemotePortChanged)
-                    .padding([8, 10])
+                    .padding([7, 10])
                     .size(13)
                     .style(ui_style::dialog_input)
-                    .width(Length::Fixed(110.0)),
+                    .width(Length::Fill),
             ]
-            .spacing(4),
+            .spacing(4)
+            .width(Length::FillPortion(1)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::End),
+        row![
             container("").width(Length::Fill),
             button(text("Add").size(12))
-                .padding([8, 14])
+                .padding([7, 14])
                 .style(ui_style::primary_button_style)
                 .on_press(Message::AddPortForward),
         ]
-        .spacing(12)
-        .align_y(Alignment::End),
+        .spacing(10)
+        .align_y(Alignment::Center),
     ]
     .spacing(6);
 
-    container(
-        column![header, error_banner, list, container("").height(8.0), form]
-            .spacing(12),
-    )
-    .width(Length::Fixed(560.0))
-    .padding(20)
-    .style(ui_style::panel)
+    column![
+        error_banner,
+        container(list).style(ui_style::panel).padding(12),
+        form
+    ]
+    .spacing(14)
     .into()
 }
 
 fn render_rule_row<'a>(rule: &'a PortForwardRule) -> Element<'a, Message> {
-    let status = if rule.enabled { "Enabled" } else { "Disabled" };
+    let local_host = if rule.local_host.is_empty() {
+        "127.0.0.1"
+    } else {
+        rule.local_host.as_str()
+    };
+
     row![
-        text(format!(
-            "{} → {}:{}",
-            rule.local_port, rule.remote_host, rule.remote_port
-        ))
-        .size(12),
-        container("").width(Length::Fill),
-        button(text(status).size(11))
-            .padding([4, 8])
-            .style(ui_style::menu_button(rule.enabled))
-            .on_press(Message::TogglePortForward(rule.id.clone())),
-        button(text("Delete").size(11))
-            .padding([4, 8])
+        text(local_host).size(13).width(Length::FillPortion(2)),
+        text(format!("{}", rule.local_port))
+            .size(13)
+            .width(Length::FillPortion(1)),
+        text(&rule.remote_host)
+            .size(13)
+            .width(Length::FillPortion(2)),
+        text(format!("{}", rule.remote_port))
+            .size(13)
+            .width(Length::FillPortion(1)),
+        button(text("Delete").size(12))
+            .padding([4, 10])
             .style(ui_style::menu_item_destructive)
-            .on_press(Message::DeletePortForward(rule.id.clone())),
+            .on_press(Message::DeletePortForward(rule.id.clone()))
+            .width(Length::Fixed(70.0)),
     ]
-    .spacing(8)
+    .spacing(12)
     .align_y(Alignment::Center)
     .into()
 }

@@ -260,6 +260,12 @@ impl App {
                     &self.connection_test_status,
                     self.saved_key_menu_open,
                     self.validation_error.as_ref(),
+                    self.session_dialog_tab,
+                    &self.port_forward_local_host,
+                    &self.port_forward_local_port,
+                    &self.port_forward_remote_host,
+                    &self.port_forward_remote_port,
+                    self.port_forward_error.as_ref(),
                 );
 
                 // Wrap in mouse_area to prevent click-through
@@ -276,47 +282,7 @@ impl App {
                 view_with_sftp_dialog
             };
 
-        let root: Element<'_, Message> = if let Some(session_id) =
-            self.port_forward_session_id.as_ref()
-        {
-            if let Some(session) = self
-                .saved_sessions
-                .iter()
-                .find(|session| &session.id == session_id)
-            {
-                let backdrop = button(
-                    container(Space::new())
-                        .width(Length::Fill)
-                        .height(Length::Fill),
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(ui_style::modal_backdrop)
-                .on_press(Message::ClosePortForwarding);
-
-                let dialog_content = components::port_forward_dialog::render(
-                    session,
-                    &self.port_forward_local_port,
-                    &self.port_forward_remote_host,
-                    &self.port_forward_remote_port,
-                    self.port_forward_error.as_ref(),
-                );
-
-                let dialog = container(
-                    iced::widget::mouse_area(dialog_content).on_press(Message::Ignore),
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill);
-
-                stack![with_session_dialog, backdrop, dialog].into()
-            } else {
-                with_session_dialog
-            }
-        } else {
-            with_session_dialog
-        };
+        let root: Element<'_, Message> = with_session_dialog;
 
         let drag_layer: Element<'_, Message> = if let Some((_pane, name)) = &self.sftp_file_dragging
         {

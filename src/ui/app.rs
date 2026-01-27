@@ -2,7 +2,7 @@ use iced::{Settings, Task, Theme};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::message::{ActiveView, Message};
+use super::message::{ActiveView, Message, SessionDialogTab};
 use super::state::{ConnectionTestStatus, SessionTab, SftpPane, SftpState, SftpTransferUpdate};
 use crate::core::SessionManager;
 use crate::platform::PlatformServices;
@@ -42,7 +42,9 @@ pub struct App {
     pub(in crate::ui) show_password: bool,
     pub(in crate::ui) connection_test_status: ConnectionTestStatus,
     pub(in crate::ui) saved_key_menu_open: bool,
+    pub(in crate::ui) session_dialog_tab: SessionDialogTab,
     pub(in crate::ui) port_forward_session_id: Option<String>,
+    pub(in crate::ui) port_forward_local_host: String,
     pub(in crate::ui) port_forward_local_port: String,
     pub(in crate::ui) port_forward_remote_host: String,
     pub(in crate::ui) port_forward_remote_port: String,
@@ -126,7 +128,9 @@ impl App {
                 show_password: false,
                 connection_test_status: ConnectionTestStatus::Idle,
                 saved_key_menu_open: false,
+                session_dialog_tab: SessionDialogTab::General,
                 port_forward_session_id: None,
+                port_forward_local_host: "127.0.0.1".to_string(),
                 port_forward_local_port: String::new(),
                 port_forward_remote_host: String::new(),
                 port_forward_remote_port: String::new(),

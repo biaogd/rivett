@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::session::SessionConfig;
 use crate::session::config::PortForwardRule;
-use crate::ui::message::{ActiveView, Message};
+use crate::ui::message::{ActiveView, Message, SessionDialogTab};
 use crate::ui::state::{ConnectionTestStatus, SessionTab, SftpState};
 use crate::ui::App;
 use uuid::Uuid;
@@ -18,6 +18,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 22,
                 String::new(),
             ));
+            app.session_dialog_tab = SessionDialogTab::General;
             app.form_name.clear();
             app.form_host.clear();
             app.form_port = String::from("22");
@@ -37,50 +38,21 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.validation_error = None;
             app.connection_test_status = ConnectionTestStatus::Idle;
             app.saved_key_menu_open = false;
+            app.port_forward_session_id = app
+                .editing_session
+                .as_ref()
+                .map(|session| session.id.clone());
+            app.port_forward_local_host = "127.0.0.1".to_string();
+            app.port_forward_local_port.clear();
+            app.port_forward_remote_host.clear();
+            app.port_forward_remote_port.clear();
+            app.port_forward_error = None;
             Task::none()
         }
         Message::EditSession(id) => {
             app.session_menu_open = None;
             if let Some(session) = app.saved_sessions.iter().find(|s| s.id == id).cloned() {
-                app.form_name = session.name.clone();
-                app.form_host = session.host.clone();
-                app.form_port = session.port.to_string();
-                app.form_username = session.username.clone();
-                if let Some(pass) = &session.password {
-                    app.form_password = pass.clone();
-                    app.auth_method_password = true;
-                } else {
-                    app.form_password.clear();
-                    app.auth_method_password = false;
-                }
-                if let crate::session::config::AuthMethod::Password = session.auth_method {
-                    app.auth_method_password = true;
-                }
-                if let crate::session::config::AuthMethod::PrivateKey {
-                    ref path,
-                    ref key_id,
-                } =
-                    session.auth_method
-                {
-                    if let Some(id) = key_id.as_ref() {
-                        app.form_key_id = id.clone();
-                    } else {
-                        app.form_key_id = app
-                            .app_settings
-                            .ssh_keys
-                            .iter()
-                            .find(|key| key.path == *path)
-                            .map(|key| key.id.clone())
-                            .unwrap_or_default();
-                    }
-                    app.auth_method_password = false;
-                }
-                app.form_key_passphrase = session.key_passphrase.clone().unwrap_or_default();
-                app.show_password = false;
-                app.editing_session = Some(session);
-                app.validation_error = None;
-                app.connection_test_status = ConnectionTestStatus::Idle;
-                app.saved_key_menu_open = false;
+                start_edit_session(app, session, SessionDialogTab::General);
             }
             Task::none()
         }
@@ -144,6 +116,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::SaveSession => {
+            let mut saved_session_id = None;
             if let Some(ref mut session) = app.editing_session {
                 if app.form_name.trim().is_empty() {
                     app.validation_error = Some("Session name is required".to_string());
@@ -219,17 +192,34 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     return Task::none();
                 }
 
+                saved_session_id = Some(session.id.clone());
                 app.editing_session = None;
                 app.validation_error = None;
                 app.saved_key_menu_open = false;
+                app.port_forward_session_id = None;
+                app.port_forward_local_host = "127.0.0.1".to_string();
+                app.port_forward_local_port.clear();
+                app.port_forward_remote_host.clear();
+                app.port_forward_remote_port.clear();
+                app.port_forward_error = None;
             }
-            Task::none()
+            if let Some(session_id) = saved_session_id {
+                apply_port_forwards(app, &session_id)
+            } else {
+                Task::none()
+            }
         }
         Message::CancelSessionEdit => {
             app.editing_session = None;
             app.validation_error = None;
             app.connection_test_status = ConnectionTestStatus::Idle;
             app.saved_key_menu_open = false;
+            app.port_forward_session_id = None;
+            app.port_forward_local_host = "127.0.0.1".to_string();
+            app.port_forward_local_port.clear();
+            app.port_forward_remote_host.clear();
+            app.port_forward_remote_port.clear();
+            app.port_forward_error = None;
             Task::none()
         }
         Message::CloseSessionManager => {
@@ -248,6 +238,11 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.validation_error = None;
             app.show_password = false;
             app.connection_test_status = ConnectionTestStatus::Idle;
+            app.saved_key_menu_open = false;
+            Task::none()
+        }
+        Message::SessionDialogTabSelected(tab) => {
+            app.session_dialog_tab = tab;
             app.saved_key_menu_open = false;
             Task::none()
         }
@@ -423,11 +418,9 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::OpenPortForwarding(id) => {
             app.session_menu_open = None;
-            app.port_forward_session_id = Some(id);
-            app.port_forward_local_port.clear();
-            app.port_forward_remote_host.clear();
-            app.port_forward_remote_port.clear();
-            app.port_forward_error = None;
+            if let Some(session) = app.saved_sessions.iter().find(|s| s.id == id).cloned() {
+                start_edit_session(app, session, SessionDialogTab::PortForwarding);
+            }
             Task::none()
         }
         Message::ClosePortForwarding => {
@@ -437,6 +430,11 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::PortForwardLocalPortChanged(value) => {
             app.port_forward_local_port = value;
+            app.port_forward_error = None;
+            Task::none()
+        }
+        Message::PortForwardLocalHostChanged(value) => {
+            app.port_forward_local_host = value;
             app.port_forward_error = None;
             Task::none()
         }
@@ -454,6 +452,13 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let session_id = match app.port_forward_session_id.clone() {
                 Some(id) => id,
                 None => return Task::none(),
+            };
+
+            let local_host = app.port_forward_local_host.trim().to_string();
+            let local_host = if local_host.is_empty() {
+                "127.0.0.1".to_string()
+            } else {
+                local_host
             };
 
             let local_port = match app.port_forward_local_port.trim().parse::<u16>() {
@@ -480,19 +485,33 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
 
+            let mut updated_saved = false;
             if let Some(session) = app
+                .editing_session
+                .as_mut()
+                .filter(|session| session.id == session_id)
+            {
+                session.port_forwards.push(PortForwardRule {
+                    id: Uuid::new_v4().to_string(),
+                    local_host,
+                    local_port,
+                    remote_host,
+                    remote_port,
+                    enabled: true,
+                });
+            } else if let Some(session) = app
                 .saved_sessions
                 .iter_mut()
                 .find(|session| session.id == session_id)
             {
                 session.port_forwards.push(PortForwardRule {
                     id: Uuid::new_v4().to_string(),
+                    local_host,
                     local_port,
                     remote_host,
                     remote_port,
                     enabled: true,
                 });
-
                 if let Err(err) = app
                     .session_storage
                     .save_session(session.clone(), &mut app.saved_sessions)
@@ -500,13 +519,18 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.port_forward_error = Some(format!("Failed to save: {}", err));
                     return Task::none();
                 }
+                updated_saved = true;
             }
 
             app.port_forward_local_port.clear();
+            app.port_forward_local_host = "127.0.0.1".to_string();
             app.port_forward_remote_host.clear();
             app.port_forward_remote_port.clear();
             app.port_forward_error = None;
-            return apply_port_forwards(app, &session_id);
+            if updated_saved {
+                return apply_port_forwards(app, &session_id);
+            }
+            Task::none()
         }
         Message::TogglePortForward(rule_id) => {
             let session_id = match app.port_forward_session_id.clone() {
@@ -514,7 +538,16 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 None => return Task::none(),
             };
 
+            let mut updated_saved = false;
             if let Some(session) = app
+                .editing_session
+                .as_mut()
+                .filter(|session| session.id == session_id)
+            {
+                if let Some(rule) = session.port_forwards.iter_mut().find(|r| r.id == rule_id) {
+                    rule.enabled = !rule.enabled;
+                }
+            } else if let Some(session) = app
                 .saved_sessions
                 .iter_mut()
                 .find(|session| session.id == session_id)
@@ -527,9 +560,13 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     {
                         app.port_forward_error = Some(format!("Failed to save: {}", err));
                     }
+                    updated_saved = true;
                 }
             }
-            return apply_port_forwards(app, &session_id);
+            if updated_saved {
+                return apply_port_forwards(app, &session_id);
+            }
+            Task::none()
         }
         Message::DeletePortForward(rule_id) => {
             let session_id = match app.port_forward_session_id.clone() {
@@ -537,7 +574,14 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 None => return Task::none(),
             };
 
+            let mut updated_saved = false;
             if let Some(session) = app
+                .editing_session
+                .as_mut()
+                .filter(|session| session.id == session_id)
+            {
+                session.port_forwards.retain(|rule| rule.id != rule_id);
+            } else if let Some(session) = app
                 .saved_sessions
                 .iter_mut()
                 .find(|session| session.id == session_id)
@@ -549,11 +593,66 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 {
                     app.port_forward_error = Some(format!("Failed to save: {}", err));
                 }
+                updated_saved = true;
             }
-            return apply_port_forwards(app, &session_id);
+            if updated_saved {
+                return apply_port_forwards(app, &session_id);
+            }
+            Task::none()
         }
         _ => Task::none(),
     }
+}
+
+fn start_edit_session(app: &mut App, session: SessionConfig, tab: SessionDialogTab) {
+    app.form_name = session.name.clone();
+    app.form_host = session.host.clone();
+    app.form_port = session.port.to_string();
+    app.form_username = session.username.clone();
+    if let Some(pass) = &session.password {
+        app.form_password = pass.clone();
+        app.auth_method_password = true;
+    } else {
+        app.form_password.clear();
+        app.auth_method_password = false;
+    }
+    if let crate::session::config::AuthMethod::Password = session.auth_method {
+        app.auth_method_password = true;
+    }
+    if let crate::session::config::AuthMethod::PrivateKey {
+        ref path,
+        ref key_id,
+    } = session.auth_method
+    {
+        if let Some(id) = key_id.as_ref() {
+            app.form_key_id = id.clone();
+        } else {
+            app.form_key_id = app
+                .app_settings
+                .ssh_keys
+                .iter()
+                .find(|key| key.path == *path)
+                .map(|key| key.id.clone())
+                .unwrap_or_default();
+        }
+        app.auth_method_password = false;
+    }
+    app.form_key_passphrase = session.key_passphrase.clone().unwrap_or_default();
+    app.show_password = false;
+    app.editing_session = Some(session);
+    app.validation_error = None;
+    app.connection_test_status = ConnectionTestStatus::Idle;
+    app.saved_key_menu_open = false;
+    app.session_dialog_tab = tab;
+    app.port_forward_session_id = app
+        .editing_session
+        .as_ref()
+        .map(|editing| editing.id.clone());
+    app.port_forward_local_host = "127.0.0.1".to_string();
+    app.port_forward_local_port.clear();
+    app.port_forward_remote_host.clear();
+    app.port_forward_remote_port.clear();
+    app.port_forward_error = None;
 }
 
 pub(in crate::ui) fn apply_port_forwards(app: &App, session_id: &str) -> Task<Message> {

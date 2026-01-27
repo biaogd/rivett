@@ -253,6 +253,39 @@ pub fn compact_tab(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
     }
 }
 
+pub fn dialog_tab(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let mut style = button::Style {
+            background: if active {
+                Some(Background::Color(color_panel_elevated()))
+            } else {
+                None
+            },
+            text_color: if active {
+                Color::from_rgb8(28, 28, 30)
+            } else {
+                Color::from_rgb8(60, 60, 64)
+            },
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 8.0.into(),
+            },
+            shadow: Shadow::default(),
+            ..button::Style::default()
+        };
+
+        if let button::Status::Hovered = status {
+            if !active {
+                style.background = Some(Background::Color(color_panel_elevated()));
+                style.text_color = Color::from_rgb8(28, 28, 30);
+            }
+        }
+
+        style
+    }
+}
+
 // Tab close button (small × button)
 pub fn tab_close_button(_theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::Style {

@@ -10,6 +10,12 @@ pub enum ActiveView {
     SessionManager,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionDialogTab {
+    General,
+    PortForwarding,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum Message {
@@ -57,6 +63,7 @@ pub enum Message {
     OpenPortForwarding(String),
     ClosePortForwarding,
     PortForwardLocalPortChanged(String),
+    PortForwardLocalHostChanged(String),
     PortForwardRemoteHostChanged(String),
     PortForwardRemotePortChanged(String),
     AddPortForward,
@@ -92,6 +99,7 @@ pub enum Message {
     SessionSearchChanged(String),
     ToggleSavedKeyMenu,
     CloseSavedKeyMenu,
+    SessionDialogTabSelected(SessionDialogTab),
     TestConnection,
     TestConnectionResult(Result<(), String>),
     // SSH Connection

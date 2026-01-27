@@ -1,5 +1,6 @@
 use crate::session::SessionConfig;
 use crate::settings::SshKeyEntry;
+use crate::ui::message::SessionDialogTab;
 use crate::ui::Message;
 use crate::ui::style as ui_style;
 use crate::ui::state::ConnectionTestStatus;
@@ -22,6 +23,12 @@ pub fn render<'a>(
     connection_test_status: &'a ConnectionTestStatus,
     saved_key_menu_open: bool,
     validation_error: Option<&'a String>,
+    session_dialog_tab: SessionDialogTab,
+    port_forward_local_host: &'a str,
+    port_forward_local_port: &'a str,
+    port_forward_remote_host: &'a str,
+    port_forward_remote_port: &'a str,
+    port_forward_error: Option<&'a String>,
 ) -> Element<'a, Message> {
     let is_new = editing_session
         .map(|s| !saved_sessions.iter().any(|saved| saved.id == s.id))
@@ -55,34 +62,34 @@ pub fn render<'a>(
     .spacing(12);
 
     let tabs = row![
-        button(text("General").size(12))
+        button(text("General").size(13))
             .padding([6, 12])
-            .style(ui_style::compact_tab(true))
-            .on_press(Message::Ignore),
-        button(text("Auth").size(12))
+            .style(ui_style::dialog_tab(session_dialog_tab == SessionDialogTab::General))
+            .on_press(Message::SessionDialogTabSelected(SessionDialogTab::General)),
+        button(text("Port Forwarding").size(13))
             .padding([6, 12])
-            .style(ui_style::compact_tab(false))
-            .on_press(Message::Ignore),
-        button(text("Advanced").size(12))
-            .padding([6, 12])
-            .style(ui_style::compact_tab(false))
-            .on_press(Message::Ignore),
+            .style(ui_style::dialog_tab(
+                session_dialog_tab == SessionDialogTab::PortForwarding,
+            ))
+            .on_press(Message::SessionDialogTabSelected(
+                SessionDialogTab::PortForwarding,
+            )),
     ]
     .spacing(6);
 
-    // Error banner
-    let error_banner = if let Some(error) = validation_error {
-        container(
-            text(format!("⚠️ {}", error))
-                .size(12)
-                .color(iced::Color::from_rgb(0.9, 0.3, 0.3)),
-        )
-        .padding(12)
-        .width(Length::Fill)
-        .style(ui_style::error_banner)
-    } else {
-        container("").height(0.0)
-    };
+    let error_banner = validation_error.map_or_else(
+        || container("").height(0.0),
+        |error| {
+            container(
+                text(format!("⚠️ {}", error))
+                    .size(12)
+                    .color(iced::Color::from_rgb(0.9, 0.3, 0.3)),
+            )
+            .padding(12)
+            .width(Length::Fill)
+            .style(ui_style::error_banner)
+        },
+    );
 
     // Form fields
     let auth_selector = row![
@@ -181,8 +188,7 @@ pub fn render<'a>(
         column![saved_key_section].spacing(6)
     };
 
-    let form_content = column![
-        // Display Name
+    let general_content = column![
         column![
             text("Display name").size(12).style(ui_style::muted_text),
             text_input("Production Server 01", form_name)
@@ -193,7 +199,6 @@ pub fn render<'a>(
         ]
         .spacing(6),
         container("").height(12.0),
-        // Host and Port
         row![
             column![
                 text("Host address").size(12).style(ui_style::muted_text),
@@ -219,7 +224,6 @@ pub fn render<'a>(
             .width(Length::FillPortion(1)),
         ],
         container("").height(12.0),
-        // Username
         column![
             text("Username").size(12).style(ui_style::muted_text),
             text_input("root", form_username)
@@ -229,13 +233,47 @@ pub fn render<'a>(
                 .style(ui_style::dialog_input),
         ]
         .spacing(6),
-        container("").height(14.0),
+    ]
+    .spacing(0);
+
+    let auth_content = column![
         text("Authentication").size(12).style(ui_style::muted_text),
         auth_selector,
         container("").height(8.0),
         auth_fields,
     ]
     .spacing(0);
+
+    let port_forward_content = editing_session.map_or_else(
+        || {
+            column![
+                text("Save the session to add port forwards.")
+                    .size(12)
+                    .style(ui_style::muted_text),
+            ]
+            .into()
+        },
+        |session| {
+            crate::ui::components::port_forward_dialog::render_inline(
+                session,
+                port_forward_local_host,
+                port_forward_local_port,
+                port_forward_remote_host,
+                port_forward_remote_port,
+                port_forward_error,
+            )
+        },
+    );
+
+    let form_content: Element<'a, Message> = match session_dialog_tab {
+        SessionDialogTab::General => column![
+            general_content,
+            container("").height(14.0),
+            auth_content
+        ]
+        .into(),
+        SessionDialogTab::PortForwarding => port_forward_content,
+    };
 
     // Footer with buttons
     let status_text = match connection_test_status {
@@ -271,12 +309,13 @@ pub fn render<'a>(
                 .style(ui_style::secondary_button_style)
                 .on_press(Message::CancelSessionEdit),
         )
-        .push(
-            button(text("Create Session").size(12))
+        .push({
+            let action_label = if is_new { "Create Session" } else { "Save Changes" };
+            button(text(action_label).size(12))
                 .padding([8, 16])
                 .style(ui_style::primary_button_style)
-                .on_press(Message::SaveSession),
-        )
+                .on_press(Message::SaveSession)
+        })
         .spacing(12)
         .align_y(Alignment::Center);
 

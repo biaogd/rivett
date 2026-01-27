@@ -163,7 +163,7 @@ impl SshSession {
     }
 
     pub async fn open_shell(&mut self) -> Result<ChannelId> {
-        let mut session = self.session.lock().await;
+        let session = self.session.lock().await;
         let channel = session.channel_open_session().await?;
         channel
             .request_pty(true, "xterm-256color", 80, 24, 0, 0, &[])
@@ -182,7 +182,7 @@ impl SshSession {
     }
 
     pub async fn open_sftp(&mut self) -> Result<SftpSession> {
-        let mut session = self.session.lock().await;
+        let session = self.session.lock().await;
         let channel = session.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
         let sftp = SftpSession::new(channel.into_stream()).await?;
@@ -192,7 +192,7 @@ impl SshSession {
     pub async fn write_data(&mut self, channel_id: ChannelId, data: &[u8]) -> Result<()> {
         let data = russh::CryptoVec::from_slice(data);
         tracing::debug!("write {} bytes on channel {:?}", data.len(), channel_id);
-        let mut session = self.session.lock().await;
+        let session = self.session.lock().await;
         match session.data(channel_id, data).await {
             Ok(_) => Ok(()),
             Err(_) => Err(anyhow::anyhow!(
@@ -234,7 +234,26 @@ impl SshSession {
             return Ok(());
         }
 
-        let bind_addr = std::net::SocketAddr::from(([127, 0, 0, 1], rule.local_port));
+        let local_host = if rule.local_host.trim().is_empty() {
+            "127.0.0.1"
+        } else {
+            rule.local_host.trim()
+        };
+        let bind_addr: std::net::SocketAddr = match format!("{}:{}", local_host, rule.local_port)
+            .parse()
+        {
+            Ok(addr) => addr,
+            Err(err) => {
+                tracing::warn!(
+                    "port forward {} invalid bind {}:{}: {}",
+                    rule.id,
+                    local_host,
+                    rule.local_port,
+                    err
+                );
+                return Err(err.into());
+            }
+        };
         let listener = match TcpListener::bind(bind_addr).await {
             Ok(listener) => listener,
             Err(err) => {
@@ -267,7 +286,7 @@ impl SshSession {
                         let session = session.clone();
                         let remote_host = remote_host.clone();
                         tokio::spawn(async move {
-                            let mut handle = session.lock().await;
+                            let handle = session.lock().await;
                             let channel: russh::Channel<client::Msg> = match handle
                                 .channel_open_direct_tcpip(
                                     remote_host,

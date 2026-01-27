@@ -702,9 +702,11 @@ impl App {
             | Message::SessionSearchChanged(_)
             | Message::ToggleSavedKeyMenu
             | Message::CloseSavedKeyMenu
+            | Message::SessionDialogTabSelected(_)
             | Message::OpenPortForwarding(_)
             | Message::ClosePortForwarding
             | Message::PortForwardLocalPortChanged(_)
+            | Message::PortForwardLocalHostChanged(_)
             | Message::PortForwardRemoteHostChanged(_)
             | Message::PortForwardRemotePortChanged(_)
             | Message::AddPortForward
