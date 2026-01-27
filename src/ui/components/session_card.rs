@@ -51,6 +51,11 @@ pub fn render<'a>(session: &'a SessionConfig, menu_open: bool) -> Element<'a, Me
                         .style(ui_style::menu_item_button)
                         .width(Length::Fill)
                         .on_press(Message::EditSession(session.id.clone())),
+                    button(text("Port Forwarding").size(12))
+                        .padding([6, 10])
+                        .style(ui_style::menu_item_button)
+                        .width(Length::Fill)
+                        .on_press(Message::OpenPortForwarding(session.id.clone())),
                     button(text("Delete").size(12))
                         .padding([6, 10])
                         .style(ui_style::menu_item_destructive)

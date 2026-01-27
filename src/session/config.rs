@@ -16,6 +16,8 @@ pub struct SessionConfig {
     pub color: Option<String>,
     pub created_at: DateTime<Utc>,
     pub last_connected: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub port_forwards: Vec<PortForwardRule>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +29,16 @@ pub enum AuthMethod {
         #[serde(default)]
         key_id: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PortForwardRule {
+    pub id: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 impl SessionConfig {
@@ -46,6 +58,7 @@ impl SessionConfig {
             color: None,
             created_at: Utc::now(),
             last_connected: None,
+            port_forwards: Vec::new(),
         }
     }
 

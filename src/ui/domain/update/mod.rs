@@ -664,9 +664,6 @@ impl App {
                     return Task::batch(tasks);
                 }
             }
-            Message::ShowPortForwarding => {
-                // TODO: Show port forwarding manager
-            }
             Message::ShowSettings => {
                 self.show_quick_connect = false;
                 self.session_menu_open = None;
@@ -705,6 +702,14 @@ impl App {
             | Message::SessionSearchChanged(_)
             | Message::ToggleSavedKeyMenu
             | Message::CloseSavedKeyMenu
+            | Message::OpenPortForwarding(_)
+            | Message::ClosePortForwarding
+            | Message::PortForwardLocalPortChanged(_)
+            | Message::PortForwardRemoteHostChanged(_)
+            | Message::PortForwardRemotePortChanged(_)
+            | Message::AddPortForward
+            | Message::TogglePortForward(_)
+            | Message::DeletePortForward(_)
             | Message::TestConnection
             | Message::TestConnectionResult(_)
             | Message::ToggleSessionMenu(_)
@@ -732,6 +737,11 @@ impl App {
                             move |result| Message::ShellOpened(result, tab_index),
                         );
 
+                        let forward_task = tab
+                            .sftp_key
+                            .clone()
+                            .map(|session_id| sessions::apply_port_forwards(self, &session_id));
+
                         // Start reading loop
                         let rx_clone = rx.clone();
                         let read_task = Task::perform(
@@ -754,8 +764,11 @@ impl App {
                             },
                             |(idx, data)| Message::TerminalDataReceived(idx, data),
                         );
-
-                        return Task::batch(vec![open_shell_task, read_task]);
+                        let mut tasks = vec![open_shell_task, read_task];
+                        if let Some(task) = forward_task {
+                            tasks.push(task);
+                        }
+                        return Task::batch(tasks);
                     }
                 }
                 Err(e) => {

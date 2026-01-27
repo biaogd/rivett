@@ -208,7 +208,7 @@ impl SettingsApp {
                     let mut parse_status: Option<String> = None;
                     let mut key_type = normalize_key_type(&self.adding_key_type);
                     let mut fingerprint = String::new();
-                    let mut stored_path = if path.is_empty() {
+                    let stored_path = if path.is_empty() {
                         if has_paste && existing_entry.is_none() {
                             "<pasted>".to_string()
                         } else {

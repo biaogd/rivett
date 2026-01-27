@@ -153,5 +153,9 @@ fn delete_secret(session_id: &str, kind: SecretKind) -> Result<(), String> {
     let entry =
         keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind))
             .map_err(|e| e.to_string())?;
-    entry.delete_credential().map_err(|e| e.to_string())
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
 }

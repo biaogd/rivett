@@ -3,9 +3,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::session::SessionConfig;
+use crate::session::config::PortForwardRule;
 use crate::ui::message::{ActiveView, Message};
 use crate::ui::state::{ConnectionTestStatus, SessionTab, SftpState};
 use crate::ui::App;
+use uuid::Uuid;
 
 pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
     match message {
@@ -419,6 +421,173 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.session_menu_open = None;
             Task::none()
         }
+        Message::OpenPortForwarding(id) => {
+            app.session_menu_open = None;
+            app.port_forward_session_id = Some(id);
+            app.port_forward_local_port.clear();
+            app.port_forward_remote_host.clear();
+            app.port_forward_remote_port.clear();
+            app.port_forward_error = None;
+            Task::none()
+        }
+        Message::ClosePortForwarding => {
+            app.port_forward_session_id = None;
+            app.port_forward_error = None;
+            Task::none()
+        }
+        Message::PortForwardLocalPortChanged(value) => {
+            app.port_forward_local_port = value;
+            app.port_forward_error = None;
+            Task::none()
+        }
+        Message::PortForwardRemoteHostChanged(value) => {
+            app.port_forward_remote_host = value;
+            app.port_forward_error = None;
+            Task::none()
+        }
+        Message::PortForwardRemotePortChanged(value) => {
+            app.port_forward_remote_port = value;
+            app.port_forward_error = None;
+            Task::none()
+        }
+        Message::AddPortForward => {
+            let session_id = match app.port_forward_session_id.clone() {
+                Some(id) => id,
+                None => return Task::none(),
+            };
+
+            let local_port = match app.port_forward_local_port.trim().parse::<u16>() {
+                Ok(port) if port > 0 => port,
+                _ => {
+                    app.port_forward_error =
+                        Some("Local port must be a number between 1 and 65535".to_string());
+                    return Task::none();
+                }
+            };
+
+            let remote_port = match app.port_forward_remote_port.trim().parse::<u16>() {
+                Ok(port) if port > 0 => port,
+                _ => {
+                    app.port_forward_error =
+                        Some("Remote port must be a number between 1 and 65535".to_string());
+                    return Task::none();
+                }
+            };
+
+            let remote_host = app.port_forward_remote_host.trim().to_string();
+            if remote_host.is_empty() {
+                app.port_forward_error = Some("Remote host is required".to_string());
+                return Task::none();
+            }
+
+            if let Some(session) = app
+                .saved_sessions
+                .iter_mut()
+                .find(|session| session.id == session_id)
+            {
+                session.port_forwards.push(PortForwardRule {
+                    id: Uuid::new_v4().to_string(),
+                    local_port,
+                    remote_host,
+                    remote_port,
+                    enabled: true,
+                });
+
+                if let Err(err) = app
+                    .session_storage
+                    .save_session(session.clone(), &mut app.saved_sessions)
+                {
+                    app.port_forward_error = Some(format!("Failed to save: {}", err));
+                    return Task::none();
+                }
+            }
+
+            app.port_forward_local_port.clear();
+            app.port_forward_remote_host.clear();
+            app.port_forward_remote_port.clear();
+            app.port_forward_error = None;
+            return apply_port_forwards(app, &session_id);
+        }
+        Message::TogglePortForward(rule_id) => {
+            let session_id = match app.port_forward_session_id.clone() {
+                Some(id) => id,
+                None => return Task::none(),
+            };
+
+            if let Some(session) = app
+                .saved_sessions
+                .iter_mut()
+                .find(|session| session.id == session_id)
+            {
+                if let Some(rule) = session.port_forwards.iter_mut().find(|r| r.id == rule_id) {
+                    rule.enabled = !rule.enabled;
+                    if let Err(err) = app
+                        .session_storage
+                        .save_session(session.clone(), &mut app.saved_sessions)
+                    {
+                        app.port_forward_error = Some(format!("Failed to save: {}", err));
+                    }
+                }
+            }
+            return apply_port_forwards(app, &session_id);
+        }
+        Message::DeletePortForward(rule_id) => {
+            let session_id = match app.port_forward_session_id.clone() {
+                Some(id) => id,
+                None => return Task::none(),
+            };
+
+            if let Some(session) = app
+                .saved_sessions
+                .iter_mut()
+                .find(|session| session.id == session_id)
+            {
+                session.port_forwards.retain(|rule| rule.id != rule_id);
+                if let Err(err) = app
+                    .session_storage
+                    .save_session(session.clone(), &mut app.saved_sessions)
+                {
+                    app.port_forward_error = Some(format!("Failed to save: {}", err));
+                }
+            }
+            return apply_port_forwards(app, &session_id);
+        }
         _ => Task::none(),
+    }
+}
+
+pub(in crate::ui) fn apply_port_forwards(app: &App, session_id: &str) -> Task<Message> {
+    let rules = match app
+        .saved_sessions
+        .iter()
+        .find(|session| session.id == session_id)
+    {
+        Some(session) => session.port_forwards.clone(),
+        None => return Task::none(),
+    };
+
+    let mut tasks = Vec::new();
+    for tab in &app.tabs {
+        if tab.sftp_key.as_deref() == Some(session_id) {
+            if let Some(session) = &tab.ssh_handle {
+                let session = session.clone();
+                let rules = rules.clone();
+                tasks.push(Task::perform(
+                    async move {
+                        let mut guard = session.lock().await;
+                        if let Err(err) = guard.sync_port_forwards(&rules).await {
+                            tracing::warn!("port forward apply failed: {}", err);
+                        }
+                    },
+                    |_| Message::Ignore,
+                ));
+            }
+        }
+    }
+
+    if tasks.is_empty() {
+        Task::none()
+    } else {
+        Task::batch(tasks)
     }
 }
