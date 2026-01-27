@@ -253,7 +253,7 @@ impl App {
                     &self.form_port,
                     &self.form_username,
                     &self.form_password,
-                    &self.form_key_path,
+                    &self.form_key_id,
                     &self.form_key_passphrase,
                     self.auth_method_password,
                     self.show_password,

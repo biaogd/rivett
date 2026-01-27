@@ -6,6 +6,7 @@ use iced::widget::{
 use iced::{Alignment, Element, Length, Settings, Subscription, Theme};
 use std::fs;
 use std::path::Path;
+use uuid::Uuid;
 
 #[cfg(target_os = "macos")]
 fn set_accessory_activation_policy() {
@@ -184,45 +185,83 @@ impl SettingsApp {
                 let path = self.adding_key_path.trim().to_string();
                 let pasted = self.adding_key_paste.text();
                 let has_paste = !pasted.trim().is_empty();
-                let can_save = (!path.is_empty() || has_paste) && !name.is_empty();
+                let existing_entry = self
+                    .editing_key
+                    .and_then(|index| self.settings.ssh_keys.get(index).cloned());
+                let can_save = (!path.is_empty() || has_paste || existing_entry.is_some())
+                    && !name.is_empty();
                 if can_save {
-                    let (key_type, fingerprint, parse_status, stored_path) =
-                        if !path.is_empty() {
-                            match fs::read_to_string(&path) {
-                                Ok(contents) => match parse_key_metadata(&contents) {
-                                    Ok((key_type, fingerprint)) => {
-                                        (key_type, fingerprint, None, path)
-                                    }
-                                    Err(err) => (
-                                        normalize_key_type(&self.adding_key_type),
-                                        String::new(),
-                                        Some(err),
-                                        path,
-                                    ),
-                                },
-                                Err(err) => (
-                                    normalize_key_type(&self.adding_key_type),
-                                    String::new(),
-                                    Some(format!("Failed to read key: {}", err)),
-                                    path,
-                                ),
+                    let mut key_content: Option<String> = None;
+                    if has_paste {
+                        key_content = Some(pasted.clone());
+                    } else if !path.is_empty() {
+                        match fs::read_to_string(&path) {
+                            Ok(contents) => key_content = Some(contents),
+                            Err(err) => {
+                                self.key_status =
+                                    Some(format!("Failed to read key: {}", err));
+                                return iced::Task::none();
                             }
+                        }
+                    }
+
+                    let mut parse_status: Option<String> = None;
+                    let mut key_type = normalize_key_type(&self.adding_key_type);
+                    let mut fingerprint = String::new();
+                    let mut stored_path = if path.is_empty() {
+                        if has_paste && existing_entry.is_none() {
+                            "<pasted>".to_string()
                         } else {
-                            match parse_key_metadata(&pasted) {
-                                Ok((key_type, fingerprint)) => {
-                                    (key_type, fingerprint, None, "<pasted>".to_string())
-                                }
-                                Err(err) => (
-                                    normalize_key_type(&self.adding_key_type),
-                                    String::new(),
-                                    Some(err),
-                                    "<pasted>".to_string(),
-                                ),
+                            existing_entry
+                                .as_ref()
+                                .map(|entry| entry.path.clone())
+                                .unwrap_or_else(|| "<stored>".to_string())
+                        }
+                    } else {
+                        path
+                    };
+
+                    let key_id = existing_entry
+                        .as_ref()
+                        .map(|entry| entry.id.clone())
+                        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+                    if let Some(content) = key_content.as_deref() {
+                        match parse_key_metadata(content) {
+                            Ok((parsed_type, parsed_fingerprint)) => {
+                                key_type = parsed_type;
+                                fingerprint = parsed_fingerprint;
                             }
-                        };
-                    let is_pasted = stored_path == "<pasted>";
+                            Err(err) => {
+                                parse_status = Some(err);
+                            }
+                        }
+                    } else if let Some(entry) = existing_entry.as_ref() {
+                        key_type = entry.key_type.clone();
+                        fingerprint = entry.fingerprint.clone();
+                        if crate::settings::load_key_secret(&entry.id).is_none() {
+                            parse_status =
+                                Some("No stored key content. Please re-import.".to_string());
+                        }
+                    } else {
+                        parse_status = Some("Key content is required.".to_string());
+                    }
+
+                    if parse_status.is_some() && key_content.is_none() {
+                        self.key_status = parse_status;
+                        return iced::Task::none();
+                    }
+
+                    if let Some(content) = key_content.as_deref() {
+                        if let Err(err) = crate::settings::store_key_secret(&key_id, content) {
+                            self.key_status = Some(format!("Failed to store key: {}", err));
+                            return iced::Task::none();
+                        }
+                    }
+
                     if let Some(index) = self.editing_key.take() {
                         if let Some(entry) = self.settings.ssh_keys.get_mut(index) {
+                            entry.id = key_id.clone();
                             entry.name = name.clone();
                             entry.path = stored_path.clone();
                             entry.key_type = key_type;
@@ -231,6 +270,7 @@ impl SettingsApp {
                     } else {
                         let is_default = self.settings.ssh_keys.is_empty();
                         self.settings.ssh_keys.push(crate::settings::SshKeyEntry {
+                            id: key_id.clone(),
                             name: name.clone(),
                             path: stored_path.clone(),
                             key_type,
@@ -242,13 +282,7 @@ impl SettingsApp {
                     self.persist_settings();
                     self.key_status = Some(match parse_status {
                         Some(err) => err,
-                        None => {
-                            if is_pasted {
-                                format!("Added key \"{}\" (pasted content not stored yet).", name)
-                            } else {
-                                format!("Added key \"{}\".", name)
-                            }
-                        }
+                        None => format!("Saved key \"{}\".", name),
                     });
                     self.adding_key = false;
                     self.adding_key_name.clear();
@@ -279,8 +313,12 @@ impl SettingsApp {
             }
             Message::DeleteKey(index) => {
                 if index < self.settings.ssh_keys.len() {
+                    let key_id = self.settings.ssh_keys[index].id.clone();
                     let was_default = self.settings.ssh_keys[index].is_default;
                     self.settings.ssh_keys.remove(index);
+                    if let Err(err) = crate::settings::delete_key_secret(&key_id) {
+                        self.key_status = Some(format!("Failed to remove key: {}", err));
+                    }
                     if was_default {
                         if let Some(first) = self.settings.ssh_keys.first_mut() {
                             first.is_default = true;

@@ -21,7 +21,14 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.form_port = String::from("22");
             app.form_username.clear();
             app.form_password.clear();
-            app.form_key_path = "~/.ssh/id_rsa".to_string();
+            app.form_key_id = app
+                .app_settings
+                .ssh_keys
+                .iter()
+                .find(|key| key.is_default)
+                .or_else(|| app.app_settings.ssh_keys.first())
+                .map(|key| key.id.clone())
+                .unwrap_or_default();
             app.form_key_passphrase.clear();
             app.auth_method_password = false;
             app.show_password = false;
@@ -47,10 +54,23 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 if let crate::session::config::AuthMethod::Password = session.auth_method {
                     app.auth_method_password = true;
                 }
-                if let crate::session::config::AuthMethod::PrivateKey { ref path } =
+                if let crate::session::config::AuthMethod::PrivateKey {
+                    ref path,
+                    ref key_id,
+                } =
                     session.auth_method
                 {
-                    app.form_key_path = path.clone();
+                    if let Some(id) = key_id.as_ref() {
+                        app.form_key_id = id.clone();
+                    } else {
+                        app.form_key_id = app
+                            .app_settings
+                            .ssh_keys
+                            .iter()
+                            .find(|key| key.path == *path)
+                            .map(|key| key.id.clone())
+                            .unwrap_or_default();
+                    }
                     app.auth_method_password = false;
                 }
                 app.form_key_passphrase = session.key_passphrase.clone().unwrap_or_default();
@@ -82,13 +102,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 let password = session.password.clone();
                 let auth_method = session.auth_method.clone();
                 let key_passphrase = session.key_passphrase.clone();
-                println!(
-                    "Connecting to {}:{} with user '{}' and password '{}'",
-                    host,
-                    port,
-                    username,
-                    password.clone().unwrap_or_default()
-                );
+                println!("Connecting to {}:{} with user '{}'", host, port, username);
 
                 app.tabs.push(SessionTab::new(&name));
                 let new_tab_index = app.tabs.len() - 1;
@@ -159,9 +173,9 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     return Task::none();
                 }
 
-                if !app.auth_method_password && app.form_key_path.trim().is_empty() {
+                if !app.auth_method_password && app.form_key_id.trim().is_empty() {
                     app.validation_error =
-                        Some("Private key path is required".to_string());
+                        Some("Private key is required".to_string());
                     return Task::none();
                 }
 
@@ -175,8 +189,17 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     session.password = Some(app.form_password.clone());
                     session.key_passphrase = None;
                 } else {
+                    let key_id = app.form_key_id.trim().to_string();
+                    let key_path = app
+                        .app_settings
+                        .ssh_keys
+                        .iter()
+                        .find(|key| key.id == key_id)
+                        .map(|key| key.path.clone())
+                        .unwrap_or_default();
                     session.auth_method = crate::session::config::AuthMethod::PrivateKey {
-                        path: app.form_key_path.clone(),
+                        path: key_path,
+                        key_id: if key_id.is_empty() { None } else { Some(key_id) },
                     };
                     session.password = None;
                     session.key_passphrase = if app.form_key_passphrase.trim().is_empty() {
@@ -267,8 +290,8 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.show_password = !app.show_password;
             Task::none()
         }
-        Message::SessionKeyPathChanged(value) => {
-            app.form_key_path = value;
+        Message::SessionKeyIdChanged(value) => {
+            app.form_key_id = value;
             app.validation_error = None;
             app.connection_test_status = ConnectionTestStatus::Idle;
             app.saved_key_menu_open = false;
@@ -305,13 +328,23 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let auth_method = if app.auth_method_password {
                 crate::session::config::AuthMethod::Password
             } else {
-                let key_path = app.form_key_path.trim().to_string();
-                if key_path.is_empty() {
+                let key_id = app.form_key_id.trim().to_string();
+                if key_id.is_empty() {
                     app.connection_test_status =
-                        ConnectionTestStatus::Failed("Private key path is required".to_string());
+                        ConnectionTestStatus::Failed("Private key is required".to_string());
                     return Task::none();
                 }
-                crate::session::config::AuthMethod::PrivateKey { path: key_path }
+                let key_path = app
+                    .app_settings
+                    .ssh_keys
+                    .iter()
+                    .find(|key| key.id == key_id)
+                    .map(|key| key.path.clone())
+                    .unwrap_or_default();
+                crate::session::config::AuthMethod::PrivateKey {
+                    path: key_path,
+                    key_id: Some(key_id),
+                }
             };
 
             let password = if app.auth_method_password {

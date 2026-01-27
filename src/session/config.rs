@@ -8,9 +8,9 @@ pub struct SessionConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub password: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub key_passphrase: Option<String>,
     pub auth_method: AuthMethod,
     pub color: Option<String>,
@@ -22,7 +22,11 @@ pub struct SessionConfig {
 #[serde(tag = "type")]
 pub enum AuthMethod {
     Password,
-    PrivateKey { path: String },
+    PrivateKey {
+        path: String,
+        #[serde(default)]
+        key_id: Option<String>,
+    },
 }
 
 impl SessionConfig {
@@ -37,6 +41,7 @@ impl SessionConfig {
             key_passphrase: None,
             auth_method: AuthMethod::PrivateKey {
                 path: String::from("~/.ssh/id_rsa"),
+                key_id: None,
             },
             color: None,
             created_at: Utc::now(),

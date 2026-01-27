@@ -80,7 +80,7 @@ pub enum Message {
     SessionUsernameChanged(String),
     SessionPasswordChanged(String),
     TogglePasswordVisibility,
-    SessionKeyPathChanged(String),
+    SessionKeyIdChanged(String),
     SessionKeyPassphraseChanged(String),
     SessionSearchChanged(String),
     ToggleSavedKeyMenu,

@@ -700,7 +700,7 @@ impl App {
             | Message::SessionUsernameChanged(_)
             | Message::SessionPasswordChanged(_)
             | Message::TogglePasswordVisibility
-            | Message::SessionKeyPathChanged(_)
+            | Message::SessionKeyIdChanged(_)
             | Message::SessionKeyPassphraseChanged(_)
             | Message::SessionSearchChanged(_)
             | Message::ToggleSavedKeyMenu

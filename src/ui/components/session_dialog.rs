@@ -15,7 +15,7 @@ pub fn render<'a>(
     form_port: &'a str,
     form_username: &'a str,
     form_password: &'a str,
-    form_key_path: &'a str,
+    form_key_id: &'a str,
     _form_key_passphrase: &'a str,
     auth_method_password: bool,
     show_password: bool,
@@ -154,14 +154,14 @@ pub fn render<'a>(
         } else {
             let selected_label = saved_keys
                 .iter()
-                .find(|key| key.path == form_key_path)
+                .find(|key| key.id == form_key_id)
                 .map(|key| key.name.as_str());
 
             let options: Vec<crate::ui::components::dropdown::DropdownOption<String>> = saved_keys
                 .iter()
                 .map(|key| crate::ui::components::dropdown::DropdownOption {
                     label: key.name.clone(),
-                    value: key.path.clone(),
+                    value: key.id.clone(),
                 })
                 .collect();
 
@@ -173,7 +173,7 @@ pub fn render<'a>(
                 saved_key_menu_open,
                 false,
                 Message::ToggleSavedKeyMenu,
-                Message::SessionKeyPathChanged,
+                Message::SessionKeyIdChanged,
                 None,
             )
         };

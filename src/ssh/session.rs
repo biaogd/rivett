@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dirs::home_dir;
 use russh::{ChannelId, client};
-use russh::keys::{load_secret_key, PrivateKey, PrivateKeyWithHashAlg};
+use russh::keys::{decode_secret_key, load_secret_key, PrivateKey, PrivateKeyWithHashAlg};
 use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -71,9 +71,20 @@ impl SshSession {
                 }
                 tracing::info!("ssh auth success (password)");
             }
-            AuthMethod::PrivateKey { path } => {
-                let expanded = Self::expand_tilde(&path);
-                let key: PrivateKey = load_secret_key(&expanded, key_passphrase.as_deref())?;
+            AuthMethod::PrivateKey { path, key_id } => {
+                let mut key_source: Option<String> = None;
+                if let Some(id) = key_id.as_deref() {
+                    key_source = crate::settings::load_key_secret(id);
+                }
+
+                let key: PrivateKey = if let Some(secret) = key_source.as_deref() {
+                    decode_secret_key(secret, key_passphrase.as_deref())?
+                } else if !path.trim().is_empty() {
+                    let expanded = Self::expand_tilde(&path);
+                    load_secret_key(&expanded, key_passphrase.as_deref())?
+                } else {
+                    return Err(anyhow::anyhow!("Private key content is missing"));
+                };
                 let hash_alg = if key.algorithm().is_rsa() {
                     session
                         .best_supported_rsa_hash()

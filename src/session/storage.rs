@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+const KEYRING_SERVICE: &str = "ssh-gui";
+
 #[derive(Debug, Serialize, Deserialize)]
 struct SessionsFile {
     version: String,
@@ -40,13 +42,48 @@ impl SessionStorage {
         let file: SessionsFile = serde_json::from_str(&contents)
             .map_err(|e| format!("Failed to parse sessions file: {}", e))?;
 
-        Ok(file.sessions)
+        let mut sessions = file.sessions;
+        for session in &mut sessions {
+            session.password = load_secret(&session.id, SecretKind::Password);
+            session.key_passphrase = load_secret(&session.id, SecretKind::KeyPassphrase);
+        }
+
+        Ok(sessions)
     }
 
     pub fn save_sessions(&self, sessions: &[SessionConfig]) -> Result<(), String> {
+        for session in sessions {
+            if let Some(password) = session.password.as_deref() {
+                if let Err(err) = store_secret(&session.id, SecretKind::Password, password) {
+                    tracing::warn!("Failed to store password in keyring: {}", err);
+                }
+            } else if let Err(err) = delete_secret(&session.id, SecretKind::Password) {
+                tracing::warn!("Failed to delete password from keyring: {}", err);
+            }
+
+            if let Some(passphrase) = session.key_passphrase.as_deref() {
+                if let Err(err) =
+                    store_secret(&session.id, SecretKind::KeyPassphrase, passphrase)
+                {
+                    tracing::warn!("Failed to store key passphrase in keyring: {}", err);
+                }
+            } else if let Err(err) = delete_secret(&session.id, SecretKind::KeyPassphrase) {
+                tracing::warn!("Failed to delete key passphrase from keyring: {}", err);
+            }
+        }
+
+        let sanitized: Vec<_> = sessions
+            .iter()
+            .cloned()
+            .map(|mut session| {
+                session.password = None;
+                session.key_passphrase = None;
+                session
+            })
+            .collect();
         let file = SessionsFile {
             version: "1.0".to_string(),
-            sessions: sessions.to_vec(),
+            sessions: sanitized,
         };
 
         let contents = serde_json::to_string_pretty(&file)
@@ -76,6 +113,45 @@ impl SessionStorage {
         existing: &mut Vec<SessionConfig>,
     ) -> Result<(), String> {
         existing.retain(|s| s.id != id);
+        if let Err(err) = delete_secret(id, SecretKind::Password) {
+            tracing::warn!("Failed to delete password from keyring: {}", err);
+        }
+        if let Err(err) = delete_secret(id, SecretKind::KeyPassphrase) {
+            tracing::warn!("Failed to delete key passphrase from keyring: {}", err);
+        }
         self.save_sessions(existing)
     }
+}
+
+#[derive(Clone, Copy)]
+enum SecretKind {
+    Password,
+    KeyPassphrase,
+}
+
+fn secret_key(session_id: &str, kind: SecretKind) -> String {
+    match kind {
+        SecretKind::Password => format!("session:{}:password", session_id),
+        SecretKind::KeyPassphrase => format!("session:{}:key_passphrase", session_id),
+    }
+}
+
+fn store_secret(session_id: &str, kind: SecretKind, value: &str) -> Result<(), String> {
+    let entry =
+        keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind))
+            .map_err(|e| e.to_string())?;
+    entry.set_password(value).map_err(|e| e.to_string())
+}
+
+fn load_secret(session_id: &str, kind: SecretKind) -> Option<String> {
+    let entry =
+        keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind)).ok()?;
+    entry.get_password().ok()
+}
+
+fn delete_secret(session_id: &str, kind: SecretKind) -> Result<(), String> {
+    let entry =
+        keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind))
+            .map_err(|e| e.to_string())?;
+    entry.delete_credential().map_err(|e| e.to_string())
 }
