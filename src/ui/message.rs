@@ -29,6 +29,9 @@ pub enum Message {
     TogglePortForwardPanel,
     ApplyPortForwards,
     PortForwardStatusUpdated(String, Vec<(String, PortForwardStatus)>),
+    PortForwardDragStart,
+    PortForwardDragEnd,
+    PortForwardDragMove(iced::Point),
     SftpDragStart,                             // Window resize drag
     SftpDragEnd,                               // Window resize drag end
     SftpDragMove(iced::Point),                 // Window resize drag move

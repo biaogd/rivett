@@ -82,6 +82,7 @@ impl App {
                 self.active_tab = 0;
                 self.port_forward_panel_open = false;
                 self.sftp_panel_open = false;
+                self.port_forward_dragging = false;
             }
             Message::ToggleSftpPanel => {
                 self.sftp_panel_open = !self.sftp_panel_open;
@@ -131,6 +132,17 @@ impl App {
                 if self.port_forward_panel_open {
                     self.sftp_panel_open = false;
                     self.sftp_dragging = false;
+                    if self.window_width > 0 {
+                        let max_width = (self.window_width as f32 - 240.0).max(320.0);
+                        if !self.port_forward_panel_initialized {
+                            self.port_forward_panel_width =
+                                (self.window_width as f32 * 0.35).clamp(360.0, 600.0);
+                            self.port_forward_panel_initialized = true;
+                        } else {
+                            self.port_forward_panel_width =
+                                self.port_forward_panel_width.clamp(320.0, max_width);
+                        }
+                    }
                 }
             }
             Message::ApplyPortForwards => {
@@ -170,6 +182,19 @@ impl App {
                     let max_width = (self.window_width as f32 - 240.0).max(320.0);
                     let width = (self.window_width as f32 - point.x).clamp(280.0, max_width);
                     self.sftp_panel_width = width;
+                }
+            }
+            Message::PortForwardDragStart => {
+                self.port_forward_dragging = true;
+            }
+            Message::PortForwardDragEnd => {
+                self.port_forward_dragging = false;
+            }
+            Message::PortForwardDragMove(point) => {
+                if self.port_forward_dragging && self.window_width > 0 {
+                    let max_width = (self.window_width as f32 - 240.0).max(320.0);
+                    let width = (self.window_width as f32 - point.x).clamp(320.0, max_width);
+                    self.port_forward_panel_width = width;
                 }
             }
             Message::SftpLocalPathChanged(path) => {

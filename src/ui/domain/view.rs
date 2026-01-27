@@ -253,7 +253,15 @@ impl App {
             ]
             .align_y(Alignment::Center);
 
-            let drawer = container(
+            let handle = iced::widget::mouse_area(
+                container(Space::new())
+                    .width(Length::Fixed(10.0))
+                    .height(Length::Fill),
+            )
+            .interaction(iced::mouse::Interaction::ResizingHorizontally)
+            .on_press(Message::PortForwardDragStart);
+
+            let drawer_content = container(
                 column![
                     header,
                     container(list_content).style(ui_style::panel).padding(12),
@@ -262,10 +270,14 @@ impl App {
                 ]
                 .spacing(12),
             )
-            .width(Length::Fixed(420.0))
+            .width(Length::Fill)
             .height(Length::Fill)
-            .padding(12)
-            .style(ui_style::drawer_panel);
+            .padding(12);
+
+            let drawer = container(row![handle, drawer_content].spacing(0))
+                .width(Length::Fixed(self.port_forward_panel_width))
+                .height(Length::Fill)
+                .style(ui_style::drawer_panel);
 
             let backdrop = button(
                 container(Space::new())
@@ -278,7 +290,10 @@ impl App {
             .on_press(Message::TogglePortForwardPanel);
 
             let overlay = container(
-                iced::widget::mouse_area(drawer).on_press(Message::Ignore),
+                iced::widget::mouse_area(drawer)
+                    .on_press(Message::Ignore)
+                    .on_move(Message::PortForwardDragMove)
+                    .on_release(Message::PortForwardDragEnd),
             )
             .width(Length::Fill)
             .height(Length::Fill)
