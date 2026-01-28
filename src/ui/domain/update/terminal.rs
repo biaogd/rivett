@@ -302,7 +302,6 @@ pub(in crate::ui) fn handle_runtime_event(
         }) => {
             let message = {
                 if app.ime_focused
-                    && !app.ime_preedit.is_empty()
                     && matches!(
                         key,
                         iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace)

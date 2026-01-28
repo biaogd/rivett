@@ -114,7 +114,7 @@ pub(in crate::ui) fn create_local_tab(app: &mut App) -> Task<Message> {
                             if width > 0 && height > 0 {
                                 let reserved_width = 0.0;
                                 let h_padding = 24.0;
-                                let v_padding = 72.0;
+                                let v_padding = 80.0;
 
                                 let term_w = (width as f32 - reserved_width - h_padding).max(0.0);
                                 let term_h = (height as f32 - v_padding).max(0.0);
