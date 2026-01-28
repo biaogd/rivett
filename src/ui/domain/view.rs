@@ -16,6 +16,7 @@ impl App {
                 self.active_tab,
                 &self.ime_preedit,
                 self.terminal_font_size,
+                self.use_gpu_renderer,
             ),
             ActiveView::SessionManager => views::session_manager::render(
                 &self.saved_sessions,

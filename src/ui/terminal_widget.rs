@@ -1,11 +1,14 @@
 use iced::mouse;
 use iced::widget::canvas::{self, Cache, Canvas, Frame, Geometry, Text};
 use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
+use iced::widget::text::LineHeight;
+use unicode_width::UnicodeWidthChar;
 use alacritty_terminal::vte::ansi::CursorShape;
 use iced::font::{Style as FontStyle, Weight as FontWeight};
 
 use crate::terminal::TerminalEmulator;
 use crate::ui::Message;
+use crate::ui::terminal_colors::convert_color;
 
 pub const BASE_CELL_WIDTH: f32 = 7.2;
 pub const BASE_CELL_HEIGHT: f32 = 16.0;
@@ -252,9 +255,10 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
         let cell_width = cell_width(self.font_size);
         let cell_height = cell_height(self.font_size);
         let terminal_font_family = crate::platform::default_terminal_font_family();
+        let fallback_font_family = crate::platform::terminal_fallback_family();
         let (cursor_col, cursor_row, cursor_shape, cursor_rgb) =
             self.emulator.cursor_render_info();
-        let preedit_len = self.preedit.map(|s| s.chars().count()).unwrap_or(0);
+        let preedit_len = self.preedit.map(display_width).unwrap_or(0);
         let (_, _, screen_lines) = self.emulator.get_scroll_state();
         let visible_lines = screen_lines.min(self.line_caches.len());
 
@@ -266,6 +270,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 let mut current_fg = Color::BLACK;
                 let mut current_weight = FontWeight::Normal;
                 let mut current_style = FontStyle::Normal;
+                let mut current_family = terminal_font_family;
                 let mut start_pos = Point::ORIGIN;
                 let mut last_col = -1;
 
@@ -301,6 +306,11 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         } else {
                             FontStyle::Normal
                         };
+                        let family = if c.is_ascii() {
+                            terminal_font_family
+                        } else {
+                            fallback_font_family
+                        };
 
                         // Only render selection background for non-space characters
                         // For wide chars, we might want to render background for double width?
@@ -335,6 +345,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         let break_span = fg_color != current_fg
                             || weight != current_weight
                             || style != current_style
+                            || family != current_family
                             || col as i32 != last_col + 1;
                         if break_span && !current_text.is_empty() {
                             frame.fill_text(Text {
@@ -343,7 +354,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                                 color: current_fg,
                                 size: self.font_size.into(),
                                 font: iced::Font {
-                                    family: iced::font::Family::Name(terminal_font_family),
+                                    family: iced::font::Family::Name(current_family),
                                     weight: current_weight,
                                     style: current_style,
                                     ..iced::Font::DEFAULT
@@ -353,11 +364,35 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                             current_text.clear();
                         }
 
+                        if !c.is_ascii() {
+                            let glyph_cells = UnicodeWidthChar::width(c).unwrap_or(1) as f32;
+                            let glyph_width = glyph_cells * cell_width;
+                            frame.fill_text(Text {
+                                content: c.to_string(),
+                                position: Point::new(x, y),
+                                color: fg_color,
+                                size: self.font_size.into(),
+                                font: iced::Font {
+                                    family: iced::font::Family::Name(family),
+                                    weight,
+                                    style,
+                                    ..iced::Font::DEFAULT
+                                },
+                                max_width: glyph_width,
+                                align_x: iced::alignment::Horizontal::Left.into(),
+                                line_height: LineHeight::Absolute(iced::Pixels(cell_height)),
+                                ..Text::default()
+                            });
+                            last_col = col as i32;
+                            return;
+                        }
+
                         if current_text.is_empty() {
                             start_pos = Point::new(x, y);
                             current_fg = fg_color;
                             current_weight = weight;
                             current_style = style;
+                            current_family = family;
                         }
 
                         current_text.push(c);
@@ -395,7 +430,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         color: current_fg,
                         size: self.font_size.into(),
                         font: iced::Font {
-                            family: iced::font::Family::Name(terminal_font_family),
+                            family: iced::font::Family::Name(current_family),
                             weight: current_weight,
                             style: current_style,
                             ..iced::Font::DEFAULT
@@ -468,7 +503,12 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
 
         if let Some(preedit) = self.preedit {
             if !preedit.is_empty() {
-                let text_width = preedit.chars().count().max(1) as f32 * cell_width;
+                let text_width = display_width(preedit).max(1) as f32 * cell_width;
+                let preedit_family = if preedit.chars().any(|c| !c.is_ascii()) {
+                    fallback_font_family
+                } else {
+                    terminal_font_family
+                };
 
                 overlay.fill_text(Text {
                     content: preedit.to_string(),
@@ -476,9 +516,10 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                     color: Color::from_rgb8(30, 64, 175),
                     size: self.font_size.into(),
                     font: iced::Font {
-                        family: iced::font::Family::Name(terminal_font_family),
+                        family: iced::font::Family::Name(preedit_family),
                         ..iced::Font::DEFAULT
                     },
+                    max_width: bounds.width,
                     ..Text::default()
                 });
 
@@ -501,62 +542,8 @@ fn available_track(track_h: f32, thumb_h: f32) -> f32 {
     track_h - thumb_h
 }
 
-fn convert_color(color: alacritty_terminal::vte::ansi::Color) -> Color {
-    use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
-
-    match color {
-        AnsiColor::Named(named) => match named {
-            NamedColor::Black => Color::BLACK,
-            NamedColor::Red => Color::from_rgb8(205, 49, 49),
-            NamedColor::Green => Color::from_rgb8(13, 188, 121),
-            NamedColor::Yellow => Color::from_rgb8(180, 160, 0), // Darker yellow for visibility
-            NamedColor::Blue => Color::from_rgb8(36, 114, 200),
-            NamedColor::Magenta => Color::from_rgb8(188, 63, 188),
-            NamedColor::Cyan => Color::from_rgb8(0, 150, 200), // Darker cyan
-            NamedColor::White => Color::from_rgb8(240, 240, 240),
-            NamedColor::Foreground => Color::BLACK, // Default text is black
-            NamedColor::Background => Color::WHITE,
-            _ => Color::BLACK,
-        },
-        AnsiColor::Spec(rgb) => Color::from_rgb8(rgb.r, rgb.g, rgb.b),
-        AnsiColor::Indexed(idx) => convert_indexed_color(idx),
-    }
-}
-
-fn convert_indexed_color(idx: u8) -> Color {
-    // 0-15: standard ANSI colors (rough defaults)
-    const ANSI_16: [Color; 16] = [
-        Color::from_rgb8(0, 0, 0),       // 0 black
-        Color::from_rgb8(205, 49, 49),   // 1 red
-        Color::from_rgb8(13, 188, 121),  // 2 green
-        Color::from_rgb8(180, 160, 0),   // 3 yellow
-        Color::from_rgb8(36, 114, 200),  // 4 blue
-        Color::from_rgb8(188, 63, 188),  // 5 magenta
-        Color::from_rgb8(0, 150, 200),   // 6 cyan
-        Color::from_rgb8(229, 229, 229), // 7 white (light gray)
-        Color::from_rgb8(85, 85, 85),    // 8 bright black (gray)
-        Color::from_rgb8(255, 95, 95),   // 9 bright red
-        Color::from_rgb8(100, 215, 140), // 10 bright green
-        Color::from_rgb8(255, 215, 95),  // 11 bright yellow
-        Color::from_rgb8(95, 175, 255),  // 12 bright blue
-        Color::from_rgb8(215, 95, 255),  // 13 bright magenta
-        Color::from_rgb8(95, 215, 255),  // 14 bright cyan
-        Color::from_rgb8(245, 245, 245), // 15 bright white
-    ];
-
-    match idx {
-        0..=15 => ANSI_16[idx as usize],
-        16..=231 => {
-            let idx = idx - 16;
-            let r = idx / 36;
-            let g = (idx % 36) / 6;
-            let b = idx % 6;
-            let scale = [0, 95, 135, 175, 215, 255];
-            Color::from_rgb8(scale[r as usize], scale[g as usize], scale[b as usize])
-        }
-        232..=255 => {
-            let gray = 8 + (idx - 232) * 10;
-            Color::from_rgb8(gray, gray, gray)
-        }
-    }
+fn display_width(text: &str) -> usize {
+    text.chars()
+        .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(1))
+        .sum()
 }

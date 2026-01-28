@@ -27,6 +27,7 @@ pub struct App {
     pub(in crate::ui) settings_storage: SettingsStorage,
     pub(in crate::ui) app_settings: AppSettings,
     pub(in crate::ui) terminal_font_size: f32,
+    pub(in crate::ui) use_gpu_renderer: bool,
     pub(in crate::ui) editing_session: Option<SessionConfig>,
     // Form state
     pub(in crate::ui) form_name: String,
@@ -94,6 +95,7 @@ impl App {
         });
         let settings_storage = SettingsStorage::new();
         let app_settings = settings_storage.load_settings().unwrap_or_default();
+        let use_gpu_renderer = app_settings.use_gpu_renderer;
         let mut sessions_tab = SessionTab::new("Sessions");
         sessions_tab.sftp_key = Some("session-manager".to_string());
 
@@ -119,6 +121,7 @@ impl App {
                 settings_storage,
                 terminal_font_size: app_settings.terminal_font_size,
                 app_settings,
+                use_gpu_renderer,
                 editing_session: None,
                 // Form defaults
                 form_name: String::new(),

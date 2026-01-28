@@ -1,20 +1,18 @@
 use crate::ui::Message;
 use crate::ui::state::{SessionState, SessionTab, Spinner};
 use crate::ui::style as ui_style;
-use crate::ui::terminal_widget;
+use crate::ui::terminal_gpu_widget::TerminalGpuView;
 use iced::widget::{column, container, row, text};
 use iced::{Alignment, Element, Length};
 
+// TODO: Replace with real GPU renderer (wgpu atlas + instance pipeline).
+// For now, this shares the CPU canvas path to keep behavior consistent.
 pub fn render<'a>(
     tabs: &'a [SessionTab],
     active_tab: usize,
     ime_preedit: &'a str,
     font_size: f32,
-    use_gpu_renderer: bool,
 ) -> Element<'a, Message> {
-    if use_gpu_renderer {
-        return super::terminal_gpu::render(tabs, active_tab, ime_preedit, font_size);
-    }
     if tabs.is_empty() {
         return column![
             container(
@@ -37,30 +35,12 @@ pub fn render<'a>(
         .into();
     }
 
-    let (
-        current_chrome_cache,
-        current_line_caches,
-        current_emulator,
-        current_tab_state,
-        _current_spinner_cache,
-    ) = if let Some(tab) = tabs.get(active_tab) {
-        (
-            &tab.chrome_cache,
-            &tab.line_caches,
-            tab.emulator.clone(),
-            &tab.state,
-            &tab.spinner_cache,
-        )
-    } else {
-        // Should be covered by is_empty check, but safe fallback
-        (
-            &tabs[0].chrome_cache,
-            &tabs[0].line_caches,
-            tabs[0].emulator.clone(),
-            &tabs[0].state,
-            &tabs[0].spinner_cache,
-        )
-    };
+    let (current_emulator, current_tab_state, _current_spinner_cache) =
+        if let Some(tab) = tabs.get(active_tab) {
+            (tab.emulator.clone(), &tab.state, &tab.spinner_cache)
+        } else {
+            (tabs[0].emulator.clone(), &tabs[0].state, &tabs[0].spinner_cache)
+        };
 
     match current_tab_state {
         SessionState::Connecting(start_time) => {
@@ -112,30 +92,18 @@ pub fn render<'a>(
             .center_y(Length::Fill)
             .into()
         }
-        _ => iced::widget::responsive(move |size| {
-            let _cols = (size.width / terminal_widget::cell_width(font_size)) as usize;
-            let _rows = (size.height / terminal_widget::cell_height(font_size)) as usize;
-
-            container(
-                terminal_widget::TerminalView::new(
-                    current_emulator.clone(),
-                    current_chrome_cache,
-                    current_line_caches,
-                    if ime_preedit.is_empty() {
-                        None
-                    } else {
-                        Some(ime_preedit)
-                    },
-                    font_size,
-                )
-                .view(),
+        _ => container(
+            TerminalGpuView::new(
+                current_emulator.clone(),
+                if ime_preedit.is_empty() { None } else { Some(ime_preedit) },
+                font_size,
             )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(0)
-            .style(ui_style::terminal_content)
-            .into()
-        })
+            .view(),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(0)
+        .style(ui_style::terminal_content)
         .into(),
     }
 }

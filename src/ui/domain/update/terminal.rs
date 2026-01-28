@@ -203,6 +203,15 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Mess
                 return Some(Task::none());
             }
 
+            if !app.ime_focused {
+                app.ime_buffer.clear();
+                return Some(Task::none());
+            }
+
+            if !app.ime_preedit.is_empty() {
+                return Some(Task::none());
+            }
+
             if value == prev {
                 return Some(Task::none());
             }
@@ -267,10 +276,23 @@ pub(in crate::ui) fn handle_runtime_event(
     match event {
         iced::event::Event::InputMethod(event) => {
             match event {
-                iced_core::input_method::Event::Opened
-                | iced_core::input_method::Event::Closed
-                | iced_core::input_method::Event::Commit(_) => {
+                iced_core::input_method::Event::Opened => {
+                    app.ime_focused = true;
                     app.ime_preedit.clear();
+                }
+                iced_core::input_method::Event::Closed => {
+                    app.ime_focused = false;
+                    app.ime_preedit.clear();
+                }
+                iced_core::input_method::Event::Commit(text) => {
+                    app.ime_preedit.clear();
+                    app.ime_ignore_next_input = true;
+                    app.ime_buffer.clear();
+                    if !text.is_empty() {
+                        return Some(Task::done(Message::TerminalInput(
+                            text.as_bytes().to_vec(),
+                        )));
+                    }
                 }
                 iced_core::input_method::Event::Preedit(content, _) => {
                     app.ime_preedit = content.clone();
@@ -286,6 +308,7 @@ pub(in crate::ui) fn handle_runtime_event(
         }) => {
             let message = {
                 if app.ime_focused
+                    && !app.ime_preedit.is_empty()
                     && matches!(
                         key,
                         iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace)
@@ -322,14 +345,14 @@ pub(in crate::ui) fn handle_runtime_event(
                 } else {
                     let s = text.as_ref().map(|t| t.as_str()).unwrap_or("");
                     if !s.is_empty() && !s.chars().any(|c| c.is_control()) {
-                        if app.ime_focused {
+                        if app.ime_focused || !app.ime_preedit.is_empty() {
                             Message::Ignore
                         } else {
                             Message::TerminalInput(s.as_bytes().to_vec())
                         }
                     } else if matches!(key, iced::keyboard::Key::Character(_)) && !modifiers.control()
                     {
-                        if s.is_empty() || app.ime_focused {
+                        if s.is_empty() || app.ime_focused || !app.ime_preedit.is_empty() {
                             Message::Ignore
                         } else {
                             Message::TerminalInput(s.as_bytes().to_vec())

@@ -54,6 +54,7 @@ enum Message {
     FontSizeIncrease,
     FontSizeInputChanged(String),
     FontSizeInputSubmit,
+    SetGpuRenderer(bool),
     AddExistingKey,
     AddKeyNameChanged(String),
     AddKeyPathChanged(String),
@@ -120,6 +121,12 @@ impl SettingsApp {
                         self.update_font_size(parsed.round());
                         self.sync_font_size_input();
                     }
+                }
+            }
+            Message::SetGpuRenderer(enabled) => {
+                if self.settings.use_gpu_renderer != enabled {
+                    self.settings.use_gpu_renderer = enabled;
+                    let _ = self.storage.save_settings(&self.settings);
                 }
             }
             Message::FontSizeInputSubmit => {
@@ -403,6 +410,23 @@ impl SettingsApp {
                 let panel = container(
                     column![
                         container(font_row).padding([8, 10]),
+                        container(
+                            row![
+                                text("GPU Renderer").size(13),
+                                container("").width(Length::Fill),
+                                button(text("On").size(12))
+                                    .padding([4, 10])
+                                    .style(ui_style::menu_button(self.settings.use_gpu_renderer))
+                                    .on_press(Message::SetGpuRenderer(true)),
+                                button(text("Off").size(12))
+                                    .padding([4, 10])
+                                    .style(ui_style::menu_button(!self.settings.use_gpu_renderer))
+                                    .on_press(Message::SetGpuRenderer(false)),
+                            ]
+                            .align_y(Alignment::Center)
+                            .spacing(8),
+                        )
+                        .padding([8, 10]),
                     ]
                     .spacing(6),
                 )

@@ -50,6 +50,81 @@ pub fn default_terminal_font_family() -> &'static str {
     }
 }
 
+pub fn terminal_fallback_family() -> &'static str {
+    use std::sync::OnceLock;
+
+    static FALLBACK: OnceLock<String> = OnceLock::new();
+    FALLBACK.get_or_init(|| detect_terminal_fallback()).as_str()
+}
+
+fn detect_terminal_fallback() -> String {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+
+    #[cfg(target_os = "macos")]
+    let candidates = [
+        "Sarasa Mono SC",
+        "Noto Sans Mono CJK SC",
+        "Noto Sans Mono CJK",
+        "Noto Sans Mono",
+        "PingFang SC",
+        "Heiti SC",
+    ];
+
+    #[cfg(target_os = "windows")]
+    let candidates = [
+        "Sarasa Mono SC",
+        "Noto Sans Mono CJK SC",
+        "Microsoft YaHei UI",
+        "Microsoft YaHei",
+        "SimHei",
+    ];
+
+    #[cfg(target_os = "linux")]
+    let candidates = [
+        "Sarasa Mono SC",
+        "Noto Sans Mono CJK SC",
+        "Noto Sans Mono CJK",
+        "Noto Sans Mono",
+        "WenQuanYi Micro Hei",
+        "DejaVu Sans Mono",
+    ];
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    let candidates = ["sans-serif"];
+
+    for name in candidates {
+        if has_family(&db, name) {
+            return name.to_string();
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        "PingFang SC".to_string()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "Noto Sans Mono CJK SC".to_string()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "Microsoft YaHei".to_string()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        "sans-serif".to_string()
+    }
+}
+
+fn has_family(db: &fontdb::Database, name: &str) -> bool {
+    db.faces().any(|face| {
+        face.families
+            .iter()
+            .any(|(family, _)| family.eq_ignore_ascii_case(name))
+    })
+}
+
 pub fn open_url(url: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut cmd = {

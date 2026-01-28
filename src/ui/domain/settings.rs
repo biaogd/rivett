@@ -11,6 +11,7 @@ impl App {
         if loaded != self.app_settings {
             self.app_settings = loaded.clone();
             self.terminal_font_size = loaded.terminal_font_size;
+            self.use_gpu_renderer = loaded.use_gpu_renderer;
             for tab in &mut self.tabs {
                 tab.mark_full_damage();
             }
