@@ -25,7 +25,22 @@ pub struct AppSettings {
     #[serde(default)]
     pub use_gpu_renderer: bool,
     #[serde(default)]
+    pub theme: ThemeMode,
+    #[serde(default)]
     pub ssh_keys: Vec<SshKeyEntry>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    Light,
+    Dark,
+}
+
+impl Default for ThemeMode {
+    fn default() -> Self {
+        ThemeMode::Light
+    }
 }
 
 impl Default for AppSettings {
@@ -33,6 +48,7 @@ impl Default for AppSettings {
         Self {
             terminal_font_size: 12.0,
             use_gpu_renderer: true,
+            theme: ThemeMode::Light,
             ssh_keys: Vec::new(),
         }
     }

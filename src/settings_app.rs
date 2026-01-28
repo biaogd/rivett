@@ -1,4 +1,4 @@
-use crate::settings::{AppSettings, SettingsStorage};
+use crate::settings::{AppSettings, SettingsStorage, ThemeMode};
 use crate::ui::style as ui_style;
 use iced::widget::{button, column, container, row, scrollable, text, text_editor, text_input};
 use iced::{Alignment, Element, Length, Settings, Subscription, Theme};
@@ -53,6 +53,7 @@ enum Message {
     FontSizeInputChanged(String),
     FontSizeInputSubmit,
     SetGpuRenderer(bool),
+    SetTheme(ThemeMode),
     AddExistingKey,
     AddKeyNameChanged(String),
     AddKeyPathChanged(String),
@@ -72,6 +73,7 @@ impl SettingsApp {
     fn new() -> (Self, iced::Task<Message>) {
         let storage = SettingsStorage::new();
         let settings = storage.load_settings().unwrap_or_default();
+        ui_style::set_dark_mode(matches!(settings.theme, ThemeMode::Dark));
         let font_size_input = format!("{}", settings.terminal_font_size.round() as i32);
         let parent_pid = read_parent_pid();
         let app = Self {
@@ -124,6 +126,13 @@ impl SettingsApp {
             Message::SetGpuRenderer(enabled) => {
                 if self.settings.use_gpu_renderer != enabled {
                     self.settings.use_gpu_renderer = enabled;
+                    let _ = self.storage.save_settings(&self.settings);
+                }
+            }
+            Message::SetTheme(mode) => {
+                if self.settings.theme != mode {
+                    self.settings.theme = mode;
+                    ui_style::set_dark_mode(matches!(mode, ThemeMode::Dark));
                     let _ = self.storage.save_settings(&self.settings);
                 }
             }
@@ -374,12 +383,41 @@ impl SettingsApp {
         .spacing(0);
 
         let content = match self.tab {
-            SettingsTab::General => column![
-                text("No settings yet.")
-                    .size(13)
-                    .style(ui_style::muted_text),
-            ]
-            .spacing(6),
+            SettingsTab::General => {
+                let header = column![
+                    text("General").size(14),
+                    text("Customize the app appearance.")
+                        .size(13)
+                        .style(ui_style::muted_text),
+                ]
+                .spacing(4);
+
+                let theme_row = row![
+                    text("Theme").size(13),
+                    container("").width(Length::Fill),
+                    button(text("Light").size(12))
+                        .padding([4, 10])
+                        .style(ui_style::menu_button(matches!(
+                            self.settings.theme,
+                            ThemeMode::Light
+                        )))
+                        .on_press(Message::SetTheme(ThemeMode::Light)),
+                    button(text("Dark").size(12))
+                        .padding([4, 10])
+                        .style(ui_style::menu_button(matches!(
+                            self.settings.theme,
+                            ThemeMode::Dark
+                        )))
+                        .on_press(Message::SetTheme(ThemeMode::Dark)),
+                ]
+                .align_y(Alignment::Center)
+                .spacing(8);
+
+                let panel = container(column![container(theme_row).padding([8, 10])])
+                    .style(ui_style::panel);
+
+                column![header, panel].spacing(16)
+            }
             SettingsTab::Terminal => {
                 let header = column![
                     text("Terminal").size(14),
@@ -779,7 +817,10 @@ pub fn run() -> iced::Result {
     set_accessory_activation_policy();
     iced::application(SettingsApp::new, SettingsApp::update, SettingsApp::view)
         .title(|_: &SettingsApp| "Settings".to_string())
-        .theme(|_: &SettingsApp| Theme::Light)
+        .theme(|app: &SettingsApp| match app.settings.theme {
+            ThemeMode::Dark => Theme::Dark,
+            ThemeMode::Light => Theme::Light,
+        })
         .settings(Settings::default())
         .window_size((720.0, 420.0))
         .subscription(SettingsApp::subscription)

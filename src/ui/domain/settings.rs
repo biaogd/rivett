@@ -9,6 +9,10 @@ impl App {
             self.app_settings = loaded.clone();
             self.terminal_font_size = loaded.terminal_font_size;
             self.use_gpu_renderer = loaded.use_gpu_renderer;
+            crate::ui::style::set_dark_mode(matches!(
+                self.app_settings.theme,
+                crate::settings::ThemeMode::Dark
+            ));
             for tab in &mut self.tabs {
                 tab.mark_full_damage();
             }

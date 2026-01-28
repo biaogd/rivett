@@ -1,19 +1,20 @@
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
 use iced::Color;
+use crate::ui::style as ui_style;
 
 pub fn convert_color(color: AnsiColor) -> Color {
     match color {
         AnsiColor::Named(named) => match named {
-            NamedColor::Black => Color::BLACK,
-            NamedColor::Red => Color::from_rgb8(205, 49, 49),
-            NamedColor::Green => Color::from_rgb8(13, 188, 121),
-            NamedColor::Yellow => Color::from_rgb8(180, 160, 0),
-            NamedColor::Blue => Color::from_rgb8(36, 114, 200),
-            NamedColor::Magenta => Color::from_rgb8(188, 63, 188),
-            NamedColor::Cyan => Color::from_rgb8(0, 150, 200),
-            NamedColor::White => Color::from_rgb8(240, 240, 240),
-            NamedColor::Foreground => Color::BLACK,
-            NamedColor::Background => Color::WHITE,
+            NamedColor::Black => ansi_16_palette()[0],
+            NamedColor::Red => ansi_16_palette()[1],
+            NamedColor::Green => ansi_16_palette()[2],
+            NamedColor::Yellow => ansi_16_palette()[3],
+            NamedColor::Blue => ansi_16_palette()[4],
+            NamedColor::Magenta => ansi_16_palette()[5],
+            NamedColor::Cyan => ansi_16_palette()[6],
+            NamedColor::White => ansi_16_palette()[7],
+            NamedColor::Foreground => ui_style::terminal_foreground(),
+            NamedColor::Background => ui_style::terminal_background(),
             _ => Color::BLACK,
         },
         AnsiColor::Spec(rgb) => Color::from_rgb8(rgb.r, rgb.g, rgb.b),
@@ -22,27 +23,10 @@ pub fn convert_color(color: AnsiColor) -> Color {
 }
 
 pub fn convert_indexed_color(idx: u8) -> Color {
-    const ANSI_16: [Color; 16] = [
-        Color::from_rgb8(0, 0, 0),
-        Color::from_rgb8(205, 49, 49),
-        Color::from_rgb8(13, 188, 121),
-        Color::from_rgb8(180, 160, 0),
-        Color::from_rgb8(36, 114, 200),
-        Color::from_rgb8(188, 63, 188),
-        Color::from_rgb8(0, 150, 200),
-        Color::from_rgb8(229, 229, 229),
-        Color::from_rgb8(85, 85, 85),
-        Color::from_rgb8(255, 95, 95),
-        Color::from_rgb8(100, 215, 140),
-        Color::from_rgb8(255, 215, 95),
-        Color::from_rgb8(95, 175, 255),
-        Color::from_rgb8(215, 95, 255),
-        Color::from_rgb8(95, 215, 255),
-        Color::from_rgb8(245, 245, 245),
-    ];
+    let ansi_16 = ansi_16_palette();
 
     match idx {
-        0..=15 => ANSI_16[idx as usize],
+        0..=15 => ansi_16[idx as usize],
         16..=231 => {
             let idx = idx - 16;
             let r = idx / 36;
@@ -55,5 +39,47 @@ pub fn convert_indexed_color(idx: u8) -> Color {
             let gray = 8 + (idx - 232) * 10;
             Color::from_rgb8(gray, gray, gray)
         }
+    }
+}
+
+fn ansi_16_palette() -> [Color; 16] {
+    if ui_style::is_dark_mode() {
+        [
+            Color::from_rgb8(0, 0, 0),
+            Color::from_rgb8(255, 85, 85),
+            Color::from_rgb8(80, 200, 120),
+            Color::from_rgb8(240, 200, 80),
+            Color::from_rgb8(100, 160, 255),
+            Color::from_rgb8(200, 120, 255),
+            Color::from_rgb8(80, 200, 220),
+            Color::from_rgb8(230, 230, 230),
+            Color::from_rgb8(120, 120, 120),
+            Color::from_rgb8(255, 120, 120),
+            Color::from_rgb8(120, 230, 170),
+            Color::from_rgb8(255, 230, 150),
+            Color::from_rgb8(140, 190, 255),
+            Color::from_rgb8(220, 160, 255),
+            Color::from_rgb8(130, 230, 255),
+            Color::from_rgb8(255, 255, 255),
+        ]
+    } else {
+        [
+            Color::from_rgb8(0, 0, 0),
+            Color::from_rgb8(205, 49, 49),
+            Color::from_rgb8(13, 188, 121),
+            Color::from_rgb8(180, 160, 0),
+            Color::from_rgb8(36, 114, 200),
+            Color::from_rgb8(188, 63, 188),
+            Color::from_rgb8(0, 150, 200),
+            Color::from_rgb8(229, 229, 229),
+            Color::from_rgb8(85, 85, 85),
+            Color::from_rgb8(255, 95, 95),
+            Color::from_rgb8(100, 215, 140),
+            Color::from_rgb8(255, 215, 95),
+            Color::from_rgb8(95, 175, 255),
+            Color::from_rgb8(215, 95, 255),
+            Color::from_rgb8(95, 215, 255),
+            Color::from_rgb8(245, 245, 245),
+        ]
     }
 }

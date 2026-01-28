@@ -1,37 +1,145 @@
 use iced::widget::scrollable;
 use iced::widget::{button, container, text};
 use iced::{Background, Border, Color, Shadow, Theme, Vector};
+use std::sync::atomic::{AtomicU8, Ordering};
 
-// === Modern Dark Theme Color Palette ===
+static THEME_MODE: AtomicU8 = AtomicU8::new(0);
+
+pub fn set_dark_mode(enabled: bool) {
+    THEME_MODE.store(if enabled { 1 } else { 0 }, Ordering::Relaxed);
+}
+
+fn is_dark() -> bool {
+    THEME_MODE.load(Ordering::Relaxed) == 1
+}
+
+pub fn is_dark_mode() -> bool {
+    is_dark()
+}
 
 #[allow(dead_code)]
 // Background colors - Light theme
 fn color_bg() -> Color {
-    Color::from_rgb8(245, 245, 247) // macOS window background
+    if is_dark() {
+        Color::from_rgb8(18, 18, 20)
+    } else {
+        Color::from_rgb8(245, 245, 247) // macOS window background
+    }
 }
 
 // Panel colors with layering
 fn color_panel() -> Color {
-    Color::from_rgb8(255, 255, 255)
+    if is_dark() {
+        Color::from_rgb8(28, 28, 30)
+    } else {
+        Color::from_rgb8(255, 255, 255)
+    }
 }
 
 fn color_panel_elevated() -> Color {
-    Color::from_rgb8(249, 250, 251)
+    if is_dark() {
+        Color::from_rgb8(36, 36, 38)
+    } else {
+        Color::from_rgb8(249, 250, 251)
+    }
 }
 
 fn color_panel_alt() -> Color {
-    Color::from_rgb8(242, 242, 244)
+    if is_dark() {
+        Color::from_rgb8(24, 24, 26)
+    } else {
+        Color::from_rgb8(242, 242, 244)
+    }
 }
 
 // Border colors
 fn color_border() -> Color {
-    Color::from_rgb8(229, 229, 231)
+    if is_dark() {
+        Color::from_rgb8(54, 54, 58)
+    } else {
+        Color::from_rgb8(229, 229, 231)
+    }
 }
 
 // Text colors - darker for light background
+fn color_text() -> Color {
+    if is_dark() {
+        Color::from_rgb8(235, 235, 240)
+    } else {
+        Color::from_rgb8(28, 28, 30)
+    }
+}
 
 fn color_text_muted() -> Color {
-    Color::from_rgb8(110, 110, 115)
+    if is_dark() {
+        Color::from_rgb8(152, 152, 158)
+    } else {
+        Color::from_rgb8(110, 110, 115)
+    }
+}
+
+pub fn terminal_background() -> Color {
+    if is_dark() {
+        color_panel()
+    } else {
+        Color::from_rgb8(255, 255, 255)
+    }
+}
+
+pub fn terminal_foreground() -> Color {
+    if is_dark() {
+        Color::from_rgb8(235, 235, 240)
+    } else {
+        Color::from_rgb8(20, 20, 22)
+    }
+}
+
+pub fn terminal_selection_bg() -> Color {
+    if is_dark() {
+        Color::from_rgba8(70, 110, 180, 0.45)
+    } else {
+        Color::from_rgba8(100, 100, 200, 0.5)
+    }
+}
+
+pub fn terminal_scrollbar_track() -> Color {
+    if is_dark() {
+        Color::from_rgba8(255, 255, 255, 0.06)
+    } else {
+        Color::from_rgba8(200, 200, 200, 0.2)
+    }
+}
+
+pub fn terminal_scrollbar_thumb() -> Color {
+    if is_dark() {
+        Color::from_rgba8(255, 255, 255, 0.28)
+    } else {
+        Color::from_rgba8(100, 100, 100, 0.5)
+    }
+}
+
+pub fn terminal_cursor_color() -> Color {
+    if is_dark() {
+        Color::from_rgba8(235, 235, 240, 0.4)
+    } else {
+        Color::from_rgba8(0, 0, 0, 0.35)
+    }
+}
+
+pub fn terminal_link_color() -> Color {
+    if is_dark() {
+        Color::from_rgb8(120, 190, 255)
+    } else {
+        Color::from_rgb8(30, 64, 175)
+    }
+}
+
+pub fn modal_backdrop_color() -> Color {
+    if is_dark() {
+        Color::from_rgba(0.0, 0.0, 0.0, 0.65)
+    } else {
+        Color::from_rgba(0.0, 0.0, 0.0, 0.5)
+    }
 }
 
 // Accent colors - vibrant but work on light bg
@@ -70,9 +178,17 @@ pub fn dialog_container(_theme: &Theme) -> container::Style {
 
 pub fn error_banner(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(Color::from_rgb(1.0, 0.95, 0.95))),
+        background: Some(Background::Color(if is_dark() {
+            Color::from_rgb8(60, 24, 24)
+        } else {
+            Color::from_rgb(1.0, 0.95, 0.95)
+        })),
         border: Border {
-            color: Color::from_rgb(0.9, 0.6, 0.6),
+            color: if is_dark() {
+                Color::from_rgb8(120, 52, 52)
+            } else {
+                Color::from_rgb(0.9, 0.6, 0.6)
+            },
             width: 1.0,
             radius: 6.0.into(),
         },
@@ -98,10 +214,10 @@ pub fn primary_button_style(_theme: &Theme, status: button::Status) -> button::S
 pub fn secondary_button_style(_theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(match status {
-            button::Status::Hovered => Color::from_rgb8(237, 238, 240),
-            _ => Color::from_rgb8(247, 248, 249),
+            button::Status::Hovered => color_panel_elevated(),
+            _ => color_panel_alt(),
         })),
-        text_color: Color::from_rgb8(60, 60, 67),
+        text_color: color_text(),
         border: Border {
             color: color_border(),
             width: 1.0,
@@ -215,7 +331,7 @@ pub fn muted_text(_theme: &Theme) -> text::Style {
 
 pub fn header_text(_theme: &Theme) -> text::Style {
     text::Style {
-        color: Some(Color::from_rgb8(28, 28, 30)),
+        color: Some(color_text()),
     }
 }
 
@@ -229,7 +345,7 @@ pub fn compact_tab(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
                 None
             },
             text_color: if active {
-                Color::from_rgb8(28, 28, 30)
+                color_text()
             } else {
                 color_text_muted()
             },
@@ -245,7 +361,7 @@ pub fn compact_tab(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
         if let button::Status::Hovered = status {
             if !active {
                 style.background = Some(Background::Color(color_panel_elevated()));
-                style.text_color = Color::from_rgb8(28, 28, 30);
+                style.text_color = color_text();
             }
         }
 
@@ -262,9 +378,9 @@ pub fn dialog_tab(active: bool) -> impl Fn(&Theme, button::Status) -> button::St
                 None
             },
             text_color: if active {
-                Color::from_rgb8(28, 28, 30)
+                color_text()
             } else {
-                Color::from_rgb8(60, 60, 64)
+                color_text_muted()
             },
             border: Border {
                 color: Color::TRANSPARENT,
@@ -278,7 +394,7 @@ pub fn dialog_tab(active: bool) -> impl Fn(&Theme, button::Status) -> button::St
         if let button::Status::Hovered = status {
             if !active {
                 style.background = Some(Background::Color(color_panel_elevated()));
-                style.text_color = Color::from_rgb8(28, 28, 30);
+                style.text_color = color_text();
             }
         }
 
@@ -321,7 +437,7 @@ pub fn icon_button(_theme: &Theme, status: button::Status) -> button::Style {
 
     if let button::Status::Hovered = status {
         style.background = Some(Background::Color(color_panel_alt()));
-        style.text_color = Color::from_rgb8(20, 20, 22);
+        style.text_color = color_text();
     }
 
     style
@@ -331,7 +447,7 @@ pub fn icon_button(_theme: &Theme, status: button::Status) -> button::Style {
 pub fn new_tab_button(_theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::Style {
         background: Some(Background::Color(color_panel())),
-        text_color: Color::from_rgb8(60, 60, 67),
+        text_color: color_text_muted(),
         border: Border {
             color: color_border(),
             width: 1.0,
@@ -363,7 +479,7 @@ pub fn menu_button(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
             text_color: if active {
                 Color::WHITE
             } else {
-                Color::from_rgb8(28, 28, 30)
+                color_text()
             },
             border: Border {
                 color: color_border(),
@@ -379,7 +495,7 @@ pub fn menu_button(active: bool) -> impl Fn(&Theme, button::Status) -> button::S
                 style.text_color = Color::WHITE;
             } else {
                 style.background = Some(Background::Color(color_panel_elevated()));
-                style.text_color = Color::from_rgb8(28, 28, 30);
+                style.text_color = color_text();
             }
         }
 
@@ -416,7 +532,7 @@ pub fn tab_bar(_theme: &Theme) -> container::Style {
 // Terminal content area
 pub fn terminal_content(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(Color::from_rgb8(255, 255, 255))), // White terminal bg
+        background: Some(Background::Color(terminal_background())),
         border: Border {
             color: color_border(),
             width: 1.0,
@@ -493,9 +609,13 @@ pub fn popover_menu(_theme: &Theme) -> container::Style {
             radius: 8.0.into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba(0.0, 0.0, 0.0, 0.06),
+            color: if is_dark() {
+                Color::from_rgba(0.0, 0.0, 0.0, 0.28)
+            } else {
+                Color::from_rgba(0.0, 0.0, 0.0, 0.06)
+            },
             offset: Vector::new(0.0, 4.0),
-            blur_radius: 10.0,
+            blur_radius: if is_dark() { 14.0 } else { 10.0 },
         },
         ..container::Style::default()
     }
@@ -504,7 +624,7 @@ pub fn popover_menu(_theme: &Theme) -> container::Style {
 pub fn menu_item_button(_theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::Style {
         background: None,
-        text_color: Color::from_rgb8(60, 60, 67),
+        text_color: color_text_muted(),
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
@@ -515,7 +635,7 @@ pub fn menu_item_button(_theme: &Theme, status: button::Status) -> button::Style
 
     if let button::Status::Hovered = status {
         style.background = Some(Background::Color(color_panel_elevated()));
-        style.text_color = Color::from_rgb8(28, 28, 30);
+        style.text_color = color_text();
     }
 
     style
@@ -563,9 +683,9 @@ pub fn action_button_destructive(_theme: &Theme, status: button::Status) -> butt
 pub fn dropdown_button(_theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::Style {
         background: Some(Background::Color(color_panel())),
-        text_color: Color::from_rgb8(28, 28, 30),
+        text_color: color_text(),
         border: Border {
-            color: Color::from_rgb8(218, 220, 224),
+            color: color_border(),
             width: 1.0,
             radius: 8.0.into(),
         },
@@ -585,7 +705,7 @@ pub fn dropdown_button_disabled(_theme: &Theme, _status: button::Status) -> butt
         background: Some(Background::Color(color_panel_alt())),
         text_color: color_text_muted(),
         border: Border {
-            color: Color::from_rgb8(218, 220, 224),
+            color: color_border(),
             width: 1.0,
             radius: 8.0.into(),
         },
@@ -629,7 +749,7 @@ pub fn breadcrumb_button(active: bool) -> impl Fn(&Theme, button::Status) -> but
             text_color: if active {
                 color_accent_dark()
             } else {
-                Color::from_rgb8(44, 44, 46)
+                color_text_muted()
             },
             border: Border {
                 color: Color::TRANSPARENT,
@@ -646,7 +766,7 @@ pub fn breadcrumb_button(active: bool) -> impl Fn(&Theme, button::Status) -> but
                 color_panel_elevated()
             }));
             if !active {
-                style.text_color = Color::from_rgb8(28, 28, 30);
+                style.text_color = color_text();
             }
         }
 
@@ -695,16 +815,20 @@ pub fn menu_item_destructive(_theme: &Theme, status: button::Status) -> button::
 // Quick Connect Popover
 pub fn quick_connect_container(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(Color::WHITE)),
+        background: Some(Background::Color(color_panel())),
         border: Border {
             color: color_border(),
             width: 1.0,
             radius: 8.0.into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba(0.0, 0.0, 0.0, 0.1),
+            color: if is_dark() {
+                Color::from_rgba(0.0, 0.0, 0.0, 0.3)
+            } else {
+                Color::from_rgba(0.0, 0.0, 0.0, 0.1)
+            },
             offset: Vector::new(0.0, 4.0),
-            blur_radius: 16.0,
+            blur_radius: if is_dark() { 20.0 } else { 16.0 },
         },
         ..container::Style::default()
     }
@@ -713,7 +837,7 @@ pub fn quick_connect_container(_theme: &Theme) -> container::Style {
 pub fn quick_connect_item(_theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::Style {
         background: None,
-        text_color: Color::BLACK,
+        text_color: color_text(),
         ..button::Style::default()
     };
 
@@ -726,7 +850,7 @@ pub fn quick_connect_item(_theme: &Theme, status: button::Status) -> button::Sty
 
 pub fn modal_backdrop(_theme: &Theme, _status: button::Status) -> button::Style {
     button::Style {
-        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+        background: Some(Background::Color(modal_backdrop_color())),
         ..button::Style::default()
     }
 }
@@ -734,7 +858,7 @@ pub fn modal_backdrop(_theme: &Theme, _status: button::Status) -> button::Style 
 #[allow(dead_code)]
 pub fn search_bar_container(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(Color::from_rgb8(248, 250, 252))), // slate-50
+        background: Some(Background::Color(color_panel_alt())),
         border: Border {
             color: color_border(),
             width: 1.0,
@@ -754,13 +878,13 @@ pub fn transparent(_theme: &Theme, _status: button::Status) -> button::Style {
 
 pub fn quick_connect_section_header(_theme: &Theme) -> text::Style {
     text::Style {
-        color: Some(Color::from_rgb8(148, 163, 184)), // slate-400
+        color: Some(color_text_muted()),
     }
 }
 
 pub fn quick_connect_footer_hint(_theme: &Theme) -> text::Style {
     text::Style {
-        color: Some(Color::from_rgb8(148, 163, 184)), // slate-400
+        color: Some(color_text_muted()),
     }
 }
 
@@ -794,12 +918,14 @@ pub fn scrollable_style(
     let scroller_color = if disabled || alpha == 0.0 {
         Color::TRANSPARENT
     } else {
-        Color::from_rgba8(120, 120, 125, alpha)
+        let base = if is_dark() { 180 } else { 120 };
+        Color::from_rgba8(base, base, base, alpha)
     };
     let scroller_border = if disabled || border_alpha == 0.0 {
         Color::TRANSPARENT
     } else {
-        Color::from_rgba8(120, 120, 125, border_alpha)
+        let base = if is_dark() { 180 } else { 120 };
+        Color::from_rgba8(base, base, base, border_alpha)
     };
 
     let rail = Rail {
@@ -845,15 +971,15 @@ pub fn search_input(
     use iced::widget::text_input;
 
     text_input::Style {
-        background: Background::Color(Color::WHITE),
+        background: Background::Color(color_panel()),
         border: Border {
             color: color_border(),
             width: 1.0,
             radius: 8.0.into(),
         },
-        icon: Color::from_rgb8(100, 116, 139),
-        placeholder: Color::from_rgb8(148, 163, 184),
-        value: Color::BLACK,
+        icon: color_text_muted(),
+        placeholder: color_text_muted(),
+        value: color_text(),
         selection: Color::from_rgb8(14, 165, 233),
     }
 }
@@ -865,15 +991,15 @@ pub fn dialog_input(
     use iced::widget::text_input;
 
     text_input::Style {
-        background: Background::Color(Color::WHITE),
+        background: Background::Color(color_panel()),
         border: Border {
-            color: Color::from_rgb8(218, 220, 224),
+            color: color_border(),
             width: 1.0,
             radius: 8.0.into(),
         },
-        icon: Color::from_rgb8(100, 116, 139),
-        placeholder: Color::from_rgb8(148, 163, 184),
-        value: Color::from_rgb8(28, 28, 30),
+        icon: color_text_muted(),
+        placeholder: color_text_muted(),
+        value: color_text(),
         selection: color_accent(),
     }
 }

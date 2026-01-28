@@ -4,6 +4,7 @@ use iced::mouse;
 use iced::widget::canvas::{self, Cache, Canvas, Frame, Geometry, Text};
 use iced::widget::text::LineHeight;
 use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
+use crate::ui::style as ui_style;
 use unicode_width::UnicodeWidthChar;
 
 use crate::terminal::TerminalEmulator;
@@ -198,10 +199,14 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let mut geometries = Vec::new();
+        let default_bg = ui_style::terminal_background();
+        let default_fg = ui_style::terminal_foreground();
+        let link_color = ui_style::terminal_link_color();
+        let cursor_fallback = ui_style::terminal_cursor_color();
 
         let chrome = self.chrome_cache.draw(renderer, bounds.size(), |frame| {
             // Fill background
-            frame.fill_rectangle(Point::ORIGIN, bounds.size(), Color::WHITE);
+            frame.fill_rectangle(Point::ORIGIN, bounds.size(), default_bg);
 
             // Draw Scrollbar
             let (total_lines, display_offset, screen_lines) = self.emulator.get_scroll_state();
@@ -222,12 +227,12 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 frame.fill_rectangle(
                     Point::new(track_x, 0.0),
                     Size::new(scrollbar_width, track_height),
-                    Color::from_rgba8(200, 200, 200, 0.2),
+                    ui_style::terminal_scrollbar_track(),
                 );
                 frame.fill_rectangle(
                     Point::new(track_x, thumb_y),
                     Size::new(scrollbar_width, thumb_height),
-                    Color::from_rgba8(100, 100, 100, 0.5),
+                    ui_style::terminal_scrollbar_thumb(),
                 );
             }
 
@@ -266,7 +271,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
             let geometry = cache.draw(renderer, bounds.size(), |frame| {
                 // --- Batched Text Rendering (per line) ---
                 let mut current_text = String::new();
-                let mut current_fg = Color::BLACK;
+                let mut current_fg = default_fg;
                 let mut current_weight = FontWeight::Normal;
                 let mut current_style = FontStyle::Normal;
                 let mut current_family = terminal_font_family;
@@ -324,8 +329,8 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                             cell_width
                         };
 
-                        let selection_bg = Color::from_rgba8(100, 100, 200, 0.5);
-                        let should_draw_bg = is_selected || bg_color != Color::WHITE;
+                        let selection_bg = ui_style::terminal_selection_bg();
+                    let should_draw_bg = is_selected || bg_color != default_bg;
                         if should_draw_bg {
                             frame.fill_rectangle(
                                 Point::new(x, y),
@@ -446,7 +451,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
         let cursor_y = cursor_row as f32 * cell_height;
         let cursor_color = cursor_rgb
             .map(|rgb| Color::from_rgb8(rgb.r, rgb.g, rgb.b))
-            .unwrap_or(Color::from_rgba8(0, 0, 0, 0.5));
+            .unwrap_or(cursor_fallback);
 
         match cursor_shape {
             CursorShape::Hidden => {}
@@ -511,7 +516,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 overlay.fill_text(Text {
                     content: preedit.to_string(),
                     position: Point::new(cursor_col as f32 * cell_width, cursor_y),
-                    color: Color::from_rgb8(30, 64, 175),
+                    color: link_color,
                     size: self.font_size.into(),
                     font: iced::Font {
                         family: iced::font::Family::Name(preedit_family),
@@ -524,7 +529,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 overlay.fill_rectangle(
                     Point::new(cursor_col as f32 * cell_width, cursor_y + cell_height - 2.0),
                     Size::new(text_width, 1.0),
-                    Color::from_rgb8(30, 64, 175),
+                    link_color,
                 );
             }
         }

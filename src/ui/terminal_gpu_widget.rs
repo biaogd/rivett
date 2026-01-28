@@ -10,6 +10,7 @@ use iced::advanced::{Clipboard, Layout, Shell, Widget};
 use iced::font::{Style as FontStyle, Weight as FontWeight};
 use iced::mouse;
 use iced::{Background, Border, Color, Element, Length, Pixels, Point, Rectangle, Size};
+use crate::ui::style as ui_style;
 use unicode_width::UnicodeWidthChar;
 
 use crate::terminal::TerminalEmulator;
@@ -175,7 +176,8 @@ impl Widget<Message, iced::Theme, iced::Renderer> for TerminalGpuView<'_> {
 
         let clip_bounds = bounds.intersection(viewport).unwrap_or(bounds);
 
-        fill_rect(renderer, bounds, Color::WHITE);
+        let default_bg = ui_style::terminal_background();
+        fill_rect(renderer, bounds, default_bg);
 
         let (total_lines, display_offset, screen_lines) = self.emulator.get_scroll_state();
         if total_lines > screen_lines {
@@ -198,7 +200,7 @@ impl Widget<Message, iced::Theme, iced::Renderer> for TerminalGpuView<'_> {
                     Point::new(track_x, bounds.y),
                     Size::new(scrollbar_width, track_height),
                 ),
-                Color::from_rgba8(200, 200, 200, 0.2),
+                ui_style::terminal_scrollbar_track(),
             );
             fill_rect(
                 renderer,
@@ -206,17 +208,19 @@ impl Widget<Message, iced::Theme, iced::Renderer> for TerminalGpuView<'_> {
                     Point::new(track_x, bounds.y + thumb_y),
                     Size::new(scrollbar_width, thumb_height),
                 ),
-                Color::from_rgba8(100, 100, 100, 0.5),
+                ui_style::terminal_scrollbar_thumb(),
             );
         }
 
         let (cursor_col, cursor_row, cursor_shape, cursor_rgb) = self.emulator.cursor_render_info();
         let preedit_len = self.preedit.map(display_width).unwrap_or(0);
+        let link_color = ui_style::terminal_link_color();
+        let cursor_fallback = ui_style::terminal_cursor_color();
         let visible_lines = screen_lines;
 
         for line in 0..visible_lines {
             let mut current_text = String::new();
-            let mut current_fg = Color::BLACK;
+            let mut current_fg = ui_style::terminal_foreground();
             let mut current_weight = FontWeight::Normal;
             let mut current_style = FontStyle::Normal;
             let mut current_family = terminal_font_family;
@@ -262,8 +266,8 @@ impl Widget<Message, iced::Theme, iced::Renderer> for TerminalGpuView<'_> {
                         cell_w
                     };
 
-                    let selection_bg = Color::from_rgba8(100, 100, 200, 0.5);
-                    let should_draw_bg = is_selected || bg != Color::WHITE;
+                    let selection_bg = ui_style::terminal_selection_bg();
+                    let should_draw_bg = is_selected || bg != default_bg;
                     if should_draw_bg {
                         fill_rect(
                             renderer,
@@ -394,7 +398,7 @@ impl Widget<Message, iced::Theme, iced::Renderer> for TerminalGpuView<'_> {
         let cursor_y = bounds.y + cursor_row as f32 * cell_h;
         let cursor_color = cursor_rgb
             .map(|rgb| Color::from_rgb8(rgb.r, rgb.g, rgb.b))
-            .unwrap_or(Color::from_rgba8(0, 0, 0, 0.5));
+            .unwrap_or(cursor_fallback);
 
         match cursor_shape {
             CursorShape::Hidden => {}
@@ -474,7 +478,7 @@ impl Widget<Message, iced::Theme, iced::Renderer> for TerminalGpuView<'_> {
                         wrapping: text::Wrapping::None,
                     },
                     Point::new(bounds.x + cursor_col as f32 * cell_w, cursor_y),
-                    Color::from_rgb8(30, 64, 175),
+                    link_color,
                     clip_bounds,
                 );
                 fill_rect(
@@ -486,7 +490,7 @@ impl Widget<Message, iced::Theme, iced::Renderer> for TerminalGpuView<'_> {
                         ),
                         Size::new(text_width, 1.0),
                     ),
-                    Color::from_rgb8(30, 64, 175),
+                    link_color,
                 );
             }
         }

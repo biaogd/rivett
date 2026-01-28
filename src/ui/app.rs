@@ -8,6 +8,8 @@ use crate::core::SessionManager;
 use crate::platform::PlatformServices;
 use crate::session::{SessionConfig, SessionStorage};
 use crate::settings::{AppSettings, SettingsStorage};
+use crate::settings::ThemeMode;
+use crate::ui::style as ui_style;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -95,6 +97,7 @@ impl App {
         });
         let settings_storage = SettingsStorage::new();
         let app_settings = settings_storage.load_settings().unwrap_or_default();
+        ui_style::set_dark_mode(matches!(app_settings.theme, ThemeMode::Dark));
         let use_gpu_renderer = app_settings.use_gpu_renderer;
         let mut sessions_tab = SessionTab::new("Sessions");
         sessions_tab.sftp_key = Some("session-manager".to_string());
@@ -191,7 +194,10 @@ impl App {
     pub fn run(settings: Settings) -> iced::Result {
         iced::daemon(App::new, App::update, App::view)
             .title(App::title)
-            .theme(|_: &App, _| Theme::Light)
+            .theme(|app: &App, _| match app.app_settings.theme {
+                ThemeMode::Dark => Theme::Dark,
+                ThemeMode::Light => Theme::Light,
+            })
             .subscription(App::subscription)
             .settings(settings)
             .run()
