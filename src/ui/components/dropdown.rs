@@ -66,11 +66,8 @@ where
         6.0,
     );
 
-    let mut content = column![
-        text(label).size(12).style(ui_style::muted_text),
-        anchored
-    ]
-    .spacing(6);
+    let mut content =
+        column![text(label).size(12).style(ui_style::muted_text), anchored].spacing(6);
 
     if let Some(helper) = helper_text {
         if !helper.trim().is_empty() {

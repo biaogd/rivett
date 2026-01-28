@@ -39,7 +39,8 @@ pub fn render<'a>(
     let remote_scroll_id = Id::new("sftp-remote-list");
 
     let local_breadcrumbs = breadcrumb_row(local_path, panel_width, Message::SftpLocalPathChanged);
-    let remote_breadcrumbs = breadcrumb_row(remote_path, panel_width, Message::SftpRemotePathChanged);
+    let remote_breadcrumbs =
+        breadcrumb_row(remote_path, panel_width, Message::SftpRemotePathChanged);
 
     let local_list = if let Some(error) = local_error {
         scrollable(
@@ -106,10 +107,7 @@ pub fn render<'a>(
             .height(Length::Fill)
     };
     let local_list: Element<'_, Message> = iced::widget::mouse_area(local_list)
-        .on_right_press(Message::SftpOpenContextMenu(
-            SftpPane::Local,
-            String::new(),
-        ))
+        .on_right_press(Message::SftpOpenContextMenu(SftpPane::Local, String::new()))
         .into();
 
     let remote_list = if remote_loading {

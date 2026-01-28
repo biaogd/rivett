@@ -1,14 +1,14 @@
 use crate::core::session::Session;
 use crate::terminal::{TerminalDamage, TerminalEmulator};
-use iced::widget::canvas::Cache;
 use iced::Point;
+use iced::widget::canvas::Cache;
+use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 use tokio::sync::Notify;
-use russh_sftp::client::SftpSession;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionState {

@@ -118,18 +118,28 @@ fn key_secret_key(key_id: &str, kind: KeySecretKind) -> String {
 }
 
 pub fn store_key_secret(key_id: &str, secret: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &key_secret_key(key_id, KeySecretKind::PrivateKey))
-        .map_err(|e| e.to_string())?;
+    let entry = keyring::Entry::new(
+        KEYRING_SERVICE,
+        &key_secret_key(key_id, KeySecretKind::PrivateKey),
+    )
+    .map_err(|e| e.to_string())?;
     entry.set_password(secret).map_err(|e| e.to_string())
 }
 
 pub fn load_key_secret(key_id: &str) -> Option<String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &key_secret_key(key_id, KeySecretKind::PrivateKey)).ok()?;
+    let entry = keyring::Entry::new(
+        KEYRING_SERVICE,
+        &key_secret_key(key_id, KeySecretKind::PrivateKey),
+    )
+    .ok()?;
     entry.get_password().ok()
 }
 
 pub fn delete_key_secret(key_id: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &key_secret_key(key_id, KeySecretKind::PrivateKey))
-        .map_err(|e| e.to_string())?;
+    let entry = keyring::Entry::new(
+        KEYRING_SERVICE,
+        &key_secret_key(key_id, KeySecretKind::PrivateKey),
+    )
+    .map_err(|e| e.to_string())?;
     entry.delete_credential().map_err(|e| e.to_string())
 }

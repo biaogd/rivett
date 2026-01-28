@@ -9,7 +9,9 @@ pub fn render<'a>(session: &'a SessionConfig, menu_open: bool) -> Element<'a, Me
 
     let mut card_content: iced::widget::Column<'a, Message, Theme, Renderer> = column![
         row![
-            text(session.name.clone()).size(14).style(ui_style::header_text),
+            text(session.name.clone())
+                .size(14)
+                .style(ui_style::header_text),
             container("").width(Length::Fill),
             button(text("⋮").size(16))
                 .padding([2, 6])
@@ -70,11 +72,9 @@ pub fn render<'a>(session: &'a SessionConfig, menu_open: bool) -> Element<'a, Me
         )
         .on_press(Message::Ignore);
 
-        let overlay = container(
-            column![row![container("").width(Length::Fill), menu]].spacing(0),
-        )
-        .width(Length::Fill)
-        .padding(8);
+        let overlay = container(column![row![container("").width(Length::Fill), menu]].spacing(0))
+            .width(Length::Fill)
+            .padding(8);
 
         stack![base_card, overlay].into()
     } else {

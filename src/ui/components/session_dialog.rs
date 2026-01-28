@@ -1,10 +1,10 @@
 use crate::session::SessionConfig;
 use crate::settings::SshKeyEntry;
-use crate::ui::message::SessionDialogTab;
 use crate::ui::Message;
-use crate::ui::style as ui_style;
+use crate::ui::message::SessionDialogTab;
 use crate::ui::state::ConnectionTestStatus;
-use iced::widget::{button, column, container, mouse_area, row, stack, text, text_input, Space};
+use crate::ui::style as ui_style;
+use iced::widget::{Space, button, column, container, mouse_area, row, stack, text, text_input};
 use iced::{Alignment, Element, Length};
 
 pub fn render<'a>(
@@ -64,7 +64,9 @@ pub fn render<'a>(
     let tabs = row![
         button(text("General").size(13))
             .padding([6, 12])
-            .style(ui_style::dialog_tab(session_dialog_tab == SessionDialogTab::General))
+            .style(ui_style::dialog_tab(
+                session_dialog_tab == SessionDialogTab::General
+            ))
             .on_press(Message::SessionDialogTabSelected(SessionDialogTab::General)),
         button(text("Port Forwarding").size(13))
             .padding([6, 12])
@@ -115,8 +117,11 @@ pub fn render<'a>(
     let auth_fields = if auth_method_password {
         let eye_icon = if show_password {
             iced::widget::svg(iced::widget::svg::Handle::from_memory(
-                include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/eye-off.svg"))
-                    .as_slice(),
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/resources/eye-off.svg"
+                ))
+                .as_slice(),
             ))
             .width(Length::Fixed(14.0))
             .height(Length::Fixed(14.0))
@@ -207,7 +212,7 @@ pub fn render<'a>(
                     .padding([8, 10])
                     .size(13)
                     .style(ui_style::dialog_input),
-        ]
+            ]
             .spacing(6)
             .width(Length::FillPortion(3)),
             container("").width(12.0),
@@ -219,7 +224,7 @@ pub fn render<'a>(
                     .size(13)
                     .style(ui_style::dialog_input)
                     .width(Length::Fixed(80.0)),
-        ]
+            ]
             .spacing(6)
             .width(Length::FillPortion(1)),
         ],
@@ -266,19 +271,18 @@ pub fn render<'a>(
     );
 
     let form_content: Element<'a, Message> = match session_dialog_tab {
-        SessionDialogTab::General => column![
-            general_content,
-            container("").height(14.0),
-            auth_content
-        ]
-        .into(),
+        SessionDialogTab::General => {
+            column![general_content, container("").height(14.0), auth_content].into()
+        }
         SessionDialogTab::PortForwarding => port_forward_content,
     };
 
     // Footer with buttons
     let status_text = match connection_test_status {
         ConnectionTestStatus::Idle => None,
-        ConnectionTestStatus::Testing => Some(text("Testing...").size(12).style(ui_style::muted_text)),
+        ConnectionTestStatus::Testing => {
+            Some(text("Testing...").size(12).style(ui_style::muted_text))
+        }
         ConnectionTestStatus::Success => Some(text("Connection ok").size(12)),
         ConnectionTestStatus::Failed(err) => Some(
             text(err)
@@ -310,7 +314,11 @@ pub fn render<'a>(
                 .on_press(Message::CancelSessionEdit),
         )
         .push({
-            let action_label = if is_new { "Create Session" } else { "Save Changes" };
+            let action_label = if is_new {
+                "Create Session"
+            } else {
+                "Save Changes"
+            };
             button(text(action_label).size(12))
                 .padding([8, 16])
                 .style(ui_style::primary_button_style)

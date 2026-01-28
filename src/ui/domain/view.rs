@@ -230,10 +230,10 @@ impl App {
 
             let header = row![
                 column![
-                    text("Port Forwarding").size(16).style(ui_style::header_text),
-                    text("Current session")
-                        .size(12)
-                        .style(ui_style::muted_text),
+                    text("Port Forwarding")
+                        .size(16)
+                        .style(ui_style::header_text),
+                    text("Current session").size(12).style(ui_style::muted_text),
                 ]
                 .spacing(2),
                 container("").width(Length::Fill),

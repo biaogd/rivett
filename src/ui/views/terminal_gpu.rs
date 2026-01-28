@@ -39,7 +39,11 @@ pub fn render<'a>(
         if let Some(tab) = tabs.get(active_tab) {
             (tab.emulator.clone(), &tab.state, &tab.spinner_cache)
         } else {
-            (tabs[0].emulator.clone(), &tabs[0].state, &tabs[0].spinner_cache)
+            (
+                tabs[0].emulator.clone(),
+                &tabs[0].state,
+                &tabs[0].spinner_cache,
+            )
         };
 
     match current_tab_state {
@@ -95,7 +99,11 @@ pub fn render<'a>(
         _ => container(
             TerminalGpuView::new(
                 current_emulator.clone(),
-                if ime_preedit.is_empty() { None } else { Some(ime_preedit) },
+                if ime_preedit.is_empty() {
+                    None
+                } else {
+                    Some(ime_preedit)
+                },
                 font_size,
             )
             .view(),

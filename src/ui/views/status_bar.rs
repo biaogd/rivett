@@ -12,29 +12,30 @@ pub fn render<'a>(
     port_forward_panel_open: bool,
 ) -> Element<'a, Message> {
     let current_tab = tabs.get(active_tab);
-    let (status_left, connection_label, sftp_enabled, port_forward_id) = if let Some(tab) = current_tab {
-        match active_view {
-            ActiveView::Terminal => {
-                let is_local = matches!(
-                    tab.session.as_ref().map(|session| session.backend.as_ref()),
-                    Some(crate::core::backend::SessionBackend::Local { .. })
-                );
-                let label = if is_local { "Local" } else { "SSH" };
-                (
-                    tab.title.to_string(),
-                    label,
-                    !is_local,
-                    tab.sftp_key.clone(),
-                )
+    let (status_left, connection_label, sftp_enabled, port_forward_id) =
+        if let Some(tab) = current_tab {
+            match active_view {
+                ActiveView::Terminal => {
+                    let is_local = matches!(
+                        tab.session.as_ref().map(|session| session.backend.as_ref()),
+                        Some(crate::core::backend::SessionBackend::Local { .. })
+                    );
+                    let label = if is_local { "Local" } else { "SSH" };
+                    (
+                        tab.title.to_string(),
+                        label,
+                        !is_local,
+                        tab.sftp_key.clone(),
+                    )
+                }
+                ActiveView::SessionManager => ("Session Manager".to_string(), "", false, None),
             }
-            ActiveView::SessionManager => ("Session Manager".to_string(), "", false, None),
-        }
-    } else {
-        match active_view {
-            ActiveView::SessionManager => ("Session Manager".to_string(), "", false, None),
-            ActiveView::Terminal => ("No active session".to_string(), "", false, None),
-        }
-    };
+        } else {
+            match active_view {
+                ActiveView::SessionManager => ("Session Manager".to_string(), "", false, None),
+                ActiveView::Terminal => ("No active session".to_string(), "", false, None),
+            }
+        };
 
     let menu_button = row![];
 

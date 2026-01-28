@@ -210,8 +210,7 @@ impl Widget<Message, iced::Theme, iced::Renderer> for TerminalGpuView<'_> {
             );
         }
 
-        let (cursor_col, cursor_row, cursor_shape, cursor_rgb) =
-            self.emulator.cursor_render_info();
+        let (cursor_col, cursor_row, cursor_shape, cursor_rgb) = self.emulator.cursor_render_info();
         let preedit_len = self.preedit.map(display_width).unwrap_or(0);
         let visible_lines = screen_lines;
 
@@ -350,20 +349,14 @@ impl Widget<Message, iced::Theme, iced::Renderer> for TerminalGpuView<'_> {
                     if cell.flags.contains(Flags::UNDERLINE) {
                         fill_rect(
                             renderer,
-                            Rectangle::new(
-                                Point::new(x, y + cell_h - 2.0),
-                                Size::new(width, 1.0),
-                            ),
+                            Rectangle::new(Point::new(x, y + cell_h - 2.0), Size::new(width, 1.0)),
                             fg,
                         );
                     }
                     if cell.flags.contains(Flags::STRIKEOUT) {
                         fill_rect(
                             renderer,
-                            Rectangle::new(
-                                Point::new(x, y + cell_h / 2.0),
-                                Size::new(width, 1.0),
-                            ),
+                            Rectangle::new(Point::new(x, y + cell_h / 2.0), Size::new(width, 1.0)),
                             fg,
                         );
                     }

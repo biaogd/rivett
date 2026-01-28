@@ -1,8 +1,8 @@
 mod core;
 mod platform;
+mod session;
 mod settings;
 mod settings_app;
-mod session;
 mod ssh;
 mod terminal;
 mod ui;
@@ -19,10 +19,7 @@ fn init_tracing() {
 
 fn main() -> iced::Result {
     init_tracing();
-    tracing::info!(
-        "iced renderer: {}",
-        std::any::type_name::<iced::Renderer>()
-    );
+    tracing::info!("iced renderer: {}", std::any::type_name::<iced::Renderer>());
     let is_settings = std::env::args().any(|arg| arg == "--settings");
     if is_settings {
         return settings_app::run();

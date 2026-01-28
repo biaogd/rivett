@@ -1,10 +1,10 @@
-use iced::mouse;
-use iced::widget::canvas::{self, Cache, Canvas, Frame, Geometry, Text};
-use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
-use iced::widget::text::LineHeight;
-use unicode_width::UnicodeWidthChar;
 use alacritty_terminal::vte::ansi::CursorShape;
 use iced::font::{Style as FontStyle, Weight as FontWeight};
+use iced::mouse;
+use iced::widget::canvas::{self, Cache, Canvas, Frame, Geometry, Text};
+use iced::widget::text::LineHeight;
+use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
+use unicode_width::UnicodeWidthChar;
 
 use crate::terminal::TerminalEmulator;
 use crate::ui::Message;
@@ -96,9 +96,9 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                 mouse::Event::ButtonPressed(mouse::Button::Left) => {
                     if is_over {
                         if let Some(link) = state.hover_link.clone() {
-                            return Some(iced::widget::canvas::Action::publish(
-                                Message::OpenUrl(link),
-                            ));
+                            return Some(iced::widget::canvas::Action::publish(Message::OpenUrl(
+                                link,
+                            )));
                         }
                         if let Some(position) = cursor.position_in(bounds) {
                             let col = (position.x / cell_width(self.font_size)) as usize;
@@ -256,8 +256,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
         let cell_height = cell_height(self.font_size);
         let terminal_font_family = crate::platform::default_terminal_font_family();
         let fallback_font_family = crate::platform::terminal_fallback_family();
-        let (cursor_col, cursor_row, cursor_shape, cursor_rgb) =
-            self.emulator.cursor_render_info();
+        let (cursor_col, cursor_row, cursor_shape, cursor_rgb) = self.emulator.cursor_render_info();
         let preedit_len = self.preedit.map(display_width).unwrap_or(0);
         let (_, _, screen_lines) = self.emulator.get_scroll_state();
         let visible_lines = screen_lines.min(self.line_caches.len());
@@ -326,8 +325,7 @@ impl<'a> canvas::Program<Message> for TerminalView<'a> {
                         };
 
                         let selection_bg = Color::from_rgba8(100, 100, 200, 0.5);
-                        let should_draw_bg =
-                            is_selected || bg_color != Color::WHITE;
+                        let should_draw_bg = is_selected || bg_color != Color::WHITE;
                         if should_draw_bg {
                             frame.fill_rectangle(
                                 Point::new(x, y),

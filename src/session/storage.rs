@@ -62,9 +62,7 @@ impl SessionStorage {
             }
 
             if let Some(passphrase) = session.key_passphrase.as_deref() {
-                if let Err(err) =
-                    store_secret(&session.id, SecretKind::KeyPassphrase, passphrase)
-                {
+                if let Err(err) = store_secret(&session.id, SecretKind::KeyPassphrase, passphrase) {
                     tracing::warn!("Failed to store key passphrase in keyring: {}", err);
                 }
             } else if let Err(err) = delete_secret(&session.id, SecretKind::KeyPassphrase) {
@@ -137,22 +135,19 @@ fn secret_key(session_id: &str, kind: SecretKind) -> String {
 }
 
 fn store_secret(session_id: &str, kind: SecretKind, value: &str) -> Result<(), String> {
-    let entry =
-        keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind))
-            .map_err(|e| e.to_string())?;
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind))
+        .map_err(|e| e.to_string())?;
     entry.set_password(value).map_err(|e| e.to_string())
 }
 
 fn load_secret(session_id: &str, kind: SecretKind) -> Option<String> {
-    let entry =
-        keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind)).ok()?;
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind)).ok()?;
     entry.get_password().ok()
 }
 
 fn delete_secret(session_id: &str, kind: SecretKind) -> Result<(), String> {
-    let entry =
-        keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind))
-            .map_err(|e| e.to_string())?;
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &secret_key(session_id, kind))
+        .map_err(|e| e.to_string())?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),

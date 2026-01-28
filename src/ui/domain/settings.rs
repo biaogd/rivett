@@ -4,10 +4,7 @@ use crate::ui::App;
 
 impl App {
     pub(in crate::ui) fn reload_settings(&mut self) {
-        let loaded = self
-            .settings_storage
-            .load_settings()
-            .unwrap_or_default();
+        let loaded = self.settings_storage.load_settings().unwrap_or_default();
         if loaded != self.app_settings {
             self.app_settings = loaded.clone();
             self.terminal_font_size = loaded.terminal_font_size;

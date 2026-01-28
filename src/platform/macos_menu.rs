@@ -2,9 +2,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use objc2::define_class;
 use objc2::rc::Retained;
-use objc2::{msg_send, sel, MainThreadOnly};
-use objc2_foundation::{MainThreadMarker, NSObject, NSString};
+use objc2::{MainThreadOnly, msg_send, sel};
 use objc2_app_kit::{NSApplication, NSMenu, NSMenuItem};
+use objc2_foundation::{MainThreadMarker, NSObject, NSString};
 
 static SETTINGS_REQUESTED: AtomicBool = AtomicBool::new(false);
 static MENU_SETUP_REQUESTED: AtomicBool = AtomicBool::new(false);

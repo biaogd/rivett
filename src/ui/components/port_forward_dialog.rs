@@ -1,6 +1,6 @@
 use crate::session::config::{PortForwardRule, SessionConfig};
-use crate::ui::state::PortForwardStatus;
 use crate::ui::Message;
+use crate::ui::state::PortForwardStatus;
 use crate::ui::style as ui_style;
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length};
@@ -259,18 +259,20 @@ fn render_rule_row<'a>(
         Some(PortForwardStatus::Error(_)) => Color::from_rgb(0.9, 0.3, 0.3),
         None => Color::from_rgb8(180, 180, 186),
     };
-    let dot = container(iced::widget::Space::new()
-        .width(Length::Fixed(10.0))
-        .height(Length::Fixed(10.0)))
-        .style(move |_| iced::widget::container::Style {
-            background: Some(Background::Color(status_color)),
-            border: Border {
-                color: status_color,
-                width: 1.0,
-                radius: 10.0.into(),
-            },
-            ..iced::widget::container::Style::default()
-        });
+    let dot = container(
+        iced::widget::Space::new()
+            .width(Length::Fixed(10.0))
+            .height(Length::Fixed(10.0)),
+    )
+    .style(move |_| iced::widget::container::Style {
+        background: Some(Background::Color(status_color)),
+        border: Border {
+            color: status_color,
+            width: 1.0,
+            radius: 10.0.into(),
+        },
+        ..iced::widget::container::Style::default()
+    });
 
     row![
         text(local_host).size(13).width(Length::FillPortion(2)),

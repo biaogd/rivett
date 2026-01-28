@@ -1,7 +1,7 @@
 use iced::Task;
 
-use crate::ui::{App, Message};
 use crate::ui::terminal_widget;
+use crate::ui::{App, Message};
 
 impl App {
     pub(in crate::ui) fn focus_terminal_ime(&self) -> Task<Message> {

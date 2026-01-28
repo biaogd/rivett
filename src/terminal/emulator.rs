@@ -202,7 +202,12 @@ impl TerminalEmulator {
         let content = term.renderable_content();
         let cursor = content.cursor;
         let color = content.colors[NamedColor::Cursor];
-        (cursor.point.column.0 as usize, cursor.point.line.0 as usize, cursor.shape, color)
+        (
+            cursor.point.column.0 as usize,
+            cursor.point.line.0 as usize,
+            cursor.shape,
+            color,
+        )
     }
 
     pub fn hyperlink_at(&self, col: usize, line: usize) -> Option<String> {
@@ -220,7 +225,9 @@ impl TerminalEmulator {
         let row = &grid[grid_line];
 
         let cell = &row[Column(col)];
-        if cell.flags.contains(alacritty_terminal::term::cell::Flags::WIDE_CHAR_SPACER)
+        if cell
+            .flags
+            .contains(alacritty_terminal::term::cell::Flags::WIDE_CHAR_SPACER)
             && col > 0
         {
             return row[Column(col - 1)]

@@ -80,13 +80,9 @@ pub fn render<'a>(
 
         column![
             container("").height(Length::Fixed(60.0)),
-            text(empty_title)
-                .size(14)
-                .style(ui_style::muted_text),
+            text(empty_title).size(14).style(ui_style::muted_text),
             container("").height(Length::Fixed(8.0)),
-            text(empty_hint)
-                .size(12)
-                .style(ui_style::muted_text),
+            text(empty_hint).size(12).style(ui_style::muted_text),
         ]
         .align_x(Alignment::Center)
         .into()

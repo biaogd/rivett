@@ -4,9 +4,9 @@ use tokio::sync::Mutex;
 
 use crate::session::SessionConfig;
 use crate::session::config::PortForwardRule;
+use crate::ui::App;
 use crate::ui::message::{ActiveView, Message, SessionDialogTab};
 use crate::ui::state::{ConnectionTestStatus, PortForwardStatus, SessionTab, SftpState};
-use crate::ui::App;
 use uuid::Uuid;
 
 pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
@@ -148,8 +148,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
 
                 if !app.auth_method_password && app.form_key_id.trim().is_empty() {
-                    app.validation_error =
-                        Some("Private key is required".to_string());
+                    app.validation_error = Some("Private key is required".to_string());
                     return Task::none();
                 }
 
@@ -173,7 +172,11 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         .unwrap_or_default();
                     session.auth_method = crate::session::config::AuthMethod::PrivateKey {
                         path: key_path,
-                        key_id: if key_id.is_empty() { None } else { Some(key_id) },
+                        key_id: if key_id.is_empty() {
+                            None
+                        } else {
+                            Some(key_id)
+                        },
                     };
                     session.password = None;
                     session.key_passphrase = if app.form_key_passphrase.trim().is_empty() {
@@ -676,7 +679,9 @@ pub(in crate::ui) fn apply_port_forwards(app: &App, session_id: &str) -> Task<Me
                             .collect::<Vec<_>>();
                         (session_id, statuses)
                     },
-                    |(session_id, statuses)| Message::PortForwardStatusUpdated(session_id, statuses),
+                    |(session_id, statuses)| {
+                        Message::PortForwardStatusUpdated(session_id, statuses)
+                    },
                 ));
             }
         }

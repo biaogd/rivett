@@ -154,13 +154,11 @@ pub fn open_url(url: &str) -> Result<(), String> {
         cmd
     };
 
-    cmd.status()
-        .map_err(|e| e.to_string())
-        .and_then(|status| {
-            if status.success() {
-                Ok(())
-            } else {
-                Err("Failed to open URL".to_string())
-            }
-        })
+    cmd.status().map_err(|e| e.to_string()).and_then(|status| {
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Failed to open URL".to_string())
+        }
+    })
 }

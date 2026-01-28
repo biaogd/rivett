@@ -1,15 +1,15 @@
 use anyhow::Result;
 use dirs::home_dir;
+use russh::keys::{PrivateKey, PrivateKeyWithHashAlg, decode_secret_key, load_secret_key};
 use russh::{ChannelId, client};
-use russh::keys::{decode_secret_key, load_secret_key, PrivateKey, PrivateKeyWithHashAlg};
 use russh_sftp::client::SftpSession;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex as AsyncMutex;
-use tokio::sync::oneshot;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use super::connection::SshClient;
@@ -77,54 +77,51 @@ impl SshSession {
                     if password.trim().is_empty() {
                         return Err(anyhow::anyhow!("Password required for authentication"));
                     }
-                let auth_res = session.authenticate_password(username, password).await?;
-                if !auth_res.success() {
-                    return Err(anyhow::anyhow!("Authentication failed"));
+                    let auth_res = session.authenticate_password(username, password).await?;
+                    if !auth_res.success() {
+                        return Err(anyhow::anyhow!("Authentication failed"));
+                    }
+                    tracing::info!("ssh auth success (password)");
                 }
-                tracing::info!("ssh auth success (password)");
-            }
-            AuthMethod::PrivateKey { path, key_id } => {
-                let mut key_source: Option<String> = None;
-                if let Some(id) = key_id.as_deref() {
-                    key_source = crate::settings::load_key_secret(id);
-                }
+                AuthMethod::PrivateKey { path, key_id } => {
+                    let mut key_source: Option<String> = None;
+                    if let Some(id) = key_id.as_deref() {
+                        key_source = crate::settings::load_key_secret(id);
+                    }
 
-                let key: PrivateKey = if let Some(secret) = key_source.as_deref() {
-                    decode_secret_key(secret, key_passphrase.as_deref())?
-                } else if !path.trim().is_empty() {
-                    let expanded = Self::expand_tilde(&path);
-                    load_secret_key(&expanded, key_passphrase.as_deref())?
-                } else {
-                    return Err(anyhow::anyhow!("Private key content is missing"));
-                };
-                let hash_alg = if key.algorithm().is_rsa() {
-                    session
-                        .best_supported_rsa_hash()
-                        .await?
-                        .flatten()
-                } else {
-                    None
-                };
-                let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
-                let auth_res = session
-                    .authenticate_publickey(username, key_with_alg)
-                    .await?;
-                if !auth_res.success() {
-                    return Err(anyhow::anyhow!("Authentication failed"));
+                    let key: PrivateKey = if let Some(secret) = key_source.as_deref() {
+                        decode_secret_key(secret, key_passphrase.as_deref())?
+                    } else if !path.trim().is_empty() {
+                        let expanded = Self::expand_tilde(&path);
+                        load_secret_key(&expanded, key_passphrase.as_deref())?
+                    } else {
+                        return Err(anyhow::anyhow!("Private key content is missing"));
+                    };
+                    let hash_alg = if key.algorithm().is_rsa() {
+                        session.best_supported_rsa_hash().await?.flatten()
+                    } else {
+                        None
+                    };
+                    let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
+                    let auth_res = session
+                        .authenticate_publickey(username, key_with_alg)
+                        .await?;
+                    if !auth_res.success() {
+                        return Err(anyhow::anyhow!("Authentication failed"));
+                    }
+                    tracing::info!("ssh auth success (public key)");
                 }
-                tracing::info!("ssh auth success (public key)");
             }
-        }
 
-        Ok((
-            Self {
-                session: Arc::new(AsyncMutex::new(session)),
-                active_channel: None,
-                shell_channel,
-                port_forwards: HashMap::new(),
-            },
-            rx,
-        ))
+            Ok((
+                Self {
+                    session: Arc::new(AsyncMutex::new(session)),
+                    active_channel: None,
+                    shell_channel,
+                    port_forwards: HashMap::new(),
+                },
+                rx,
+            ))
         })
         .await;
 
@@ -171,9 +168,7 @@ impl SshSession {
         channel.request_shell(true).await?;
         let id = channel.id();
         let (mut read_half, write_half) = channel.split();
-        tokio::spawn(async move {
-            while let Some(_msg) = read_half.wait().await {}
-        });
+        tokio::spawn(async move { while let Some(_msg) = read_half.wait().await {} });
         self.active_channel = Some(write_half);
         if let Ok(mut guard) = self.shell_channel.lock() {
             *guard = Some(id);
@@ -234,11 +229,7 @@ impl SshSession {
                             results.insert(rule.id.clone(), Ok(()));
                         }
                         Err(err) => {
-                            tracing::warn!(
-                                "port forward {} failed: {}",
-                                rule.id,
-                                err
-                            );
+                            tracing::warn!("port forward {} failed: {}", rule.id, err);
                             results.insert(rule.id.clone(), Err(err.to_string()));
                         }
                     }
@@ -286,25 +277,29 @@ impl SshSession {
         } else {
             rule.local_host.trim()
         };
-        let bind_addr: std::net::SocketAddr = match format!("{}:{}", local_host, rule.local_port)
-            .parse()
-        {
-            Ok(addr) => addr,
-            Err(err) => {
-                tracing::warn!(
-                    "port forward {} invalid bind {}:{}: {}",
-                    rule.id,
-                    local_host,
-                    rule.local_port,
-                    err
-                );
-                return Err(err.into());
-            }
-        };
+        let bind_addr: std::net::SocketAddr =
+            match format!("{}:{}", local_host, rule.local_port).parse() {
+                Ok(addr) => addr,
+                Err(err) => {
+                    tracing::warn!(
+                        "port forward {} invalid bind {}:{}: {}",
+                        rule.id,
+                        local_host,
+                        rule.local_port,
+                        err
+                    );
+                    return Err(err.into());
+                }
+            };
         let listener = match TcpListener::bind(bind_addr).await {
             Ok(listener) => listener,
             Err(err) => {
-                tracing::warn!("port forward {} bind {} failed: {}", rule.id, bind_addr, err);
+                tracing::warn!(
+                    "port forward {} bind {} failed: {}",
+                    rule.id,
+                    bind_addr,
+                    err
+                );
                 return Err(err.into());
             }
         };

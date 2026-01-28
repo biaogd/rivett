@@ -168,10 +168,9 @@ impl App {
                 }
             }
             Message::OpenUrl(url) => {
-                return Task::perform(
-                    async move { crate::platform::open_url(&url) },
-                    |_| Message::Ignore,
-                );
+                return Task::perform(async move { crate::platform::open_url(&url) }, |_| {
+                    Message::Ignore
+                });
             }
             Message::PortForwardStatusUpdated(session_id, statuses) => {
                 self.port_forward_statuses

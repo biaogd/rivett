@@ -1,5 +1,5 @@
-use russh::{ChannelId, client};
 use russh::keys::PublicKey;
+use russh::{ChannelId, client};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -16,7 +16,6 @@ impl SshClient {
     ) -> Self {
         Self { tx, shell_channel }
     }
-
 }
 
 impl client::Handler for SshClient {
@@ -50,11 +49,7 @@ impl client::Handler for SshClient {
         }
     }
 
-    fn adjust_window(
-        &mut self,
-        channel: ChannelId,
-        window: u32,
-    ) -> u32 {
+    fn adjust_window(&mut self, channel: ChannelId, window: u32) -> u32 {
         tracing::debug!("ssh window adjust {:?} -> {}", channel, window);
         window
     }

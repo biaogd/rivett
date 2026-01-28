@@ -4,7 +4,7 @@ use iced::advanced::renderer;
 use iced::advanced::widget;
 use iced::advanced::widget::tree;
 use iced::advanced::{Clipboard, Layout, Shell, Widget};
-use iced::{mouse, Element, Length, Point, Rectangle, Size, Vector};
+use iced::{Element, Length, Point, Rectangle, Size, Vector, mouse};
 
 pub fn anchored_menu<'a, Message, Theme, Renderer>(
     target: impl Into<Element<'a, Message, Theme, Renderer>>,
@@ -51,10 +51,7 @@ where
     }
 
     fn children(&self) -> Vec<tree::Tree> {
-        vec![
-            tree::Tree::new(&self.target),
-            tree::Tree::new(&self.menu),
-        ]
+        vec![tree::Tree::new(&self.target), tree::Tree::new(&self.menu)]
     }
 
     fn diff(&self, tree: &mut tree::Tree) {
@@ -175,9 +172,12 @@ where
     Renderer: renderer::Renderer,
 {
     fn layout(&mut self, renderer: &Renderer, bounds: Size) -> layout::Node {
-        let limits = layout::Limits::new(Size::ZERO, bounds)
-            .width(Length::Fixed(self.target_bounds.width));
-        let menu_layout = self.menu.as_widget_mut().layout(self.tree, renderer, &limits);
+        let limits =
+            layout::Limits::new(Size::ZERO, bounds).width(Length::Fixed(self.target_bounds.width));
+        let menu_layout = self
+            .menu
+            .as_widget_mut()
+            .layout(self.tree, renderer, &limits);
         let node = menu_layout.move_to(Point::new(
             self.target_bounds.x,
             self.target_bounds.y + self.target_bounds.height + self.gap,
@@ -215,9 +215,15 @@ where
         layout: Layout<'_>,
         cursor: mouse::Cursor,
     ) {
-        self.menu
-            .as_widget()
-            .draw(self.tree, renderer, theme, style, layout, cursor, &layout.bounds());
+        self.menu.as_widget().draw(
+            self.tree,
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            &layout.bounds(),
+        );
     }
 
     fn mouse_interaction(

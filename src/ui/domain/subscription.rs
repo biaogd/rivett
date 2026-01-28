@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::ui::App;
 use crate::ui::message::Message;
 use crate::ui::state::SessionState;
-use crate::ui::App;
 
 impl App {
     pub(in crate::ui) fn subscription(&self) -> iced::Subscription<Message> {

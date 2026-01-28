@@ -2,12 +2,12 @@ use iced::Task;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use uuid::Uuid;
 
+use crate::ui::App;
 use crate::ui::message::{ActiveView, Message};
 use crate::ui::state::{SessionState, SessionTab, SftpState};
-use crate::ui::App;
 
 pub(in crate::ui) fn create_local_tab(app: &mut App) -> Task<Message> {
     let mut commands = Vec::new();

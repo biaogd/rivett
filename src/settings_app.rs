@@ -1,8 +1,6 @@
 use crate::settings::{AppSettings, SettingsStorage};
 use crate::ui::style as ui_style;
-use iced::widget::{
-    button, column, container, row, scrollable, text, text_editor, text_input,
-};
+use iced::widget::{button, column, container, row, scrollable, text, text_editor, text_input};
 use iced::{Alignment, Element, Length, Settings, Subscription, Theme};
 use std::fs;
 use std::path::Path;
@@ -174,8 +172,10 @@ impl SettingsApp {
                         Ok(contents) => match parse_key_metadata(&contents) {
                             Ok((key_type, fingerprint)) => {
                                 self.adding_key_type = key_type;
-                                self.key_status =
-                                    Some(format!("Fingerprint: {}", short_fingerprint(&fingerprint)));
+                                self.key_status = Some(format!(
+                                    "Fingerprint: {}",
+                                    short_fingerprint(&fingerprint)
+                                ));
                             }
                             Err(err) => {
                                 self.key_status = Some(err);
@@ -195,8 +195,8 @@ impl SettingsApp {
                 let existing_entry = self
                     .editing_key
                     .and_then(|index| self.settings.ssh_keys.get(index).cloned());
-                let can_save = (!path.is_empty() || has_paste || existing_entry.is_some())
-                    && !name.is_empty();
+                let can_save =
+                    (!path.is_empty() || has_paste || existing_entry.is_some()) && !name.is_empty();
                 if can_save {
                     let mut key_content: Option<String> = None;
                     if has_paste {
@@ -205,8 +205,7 @@ impl SettingsApp {
                         match fs::read_to_string(&path) {
                             Ok(contents) => key_content = Some(contents),
                             Err(err) => {
-                                self.key_status =
-                                    Some(format!("Failed to read key: {}", err));
+                                self.key_status = Some(format!("Failed to read key: {}", err));
                                 return iced::Task::none();
                             }
                         }
@@ -358,21 +357,29 @@ impl SettingsApp {
     fn view(&self) -> Element<'_, Message> {
         let sidebar = column![
             container("").height(10.0),
-            tab_button("General", self.tab == SettingsTab::General, SettingsTab::General),
+            tab_button(
+                "General",
+                self.tab == SettingsTab::General,
+                SettingsTab::General
+            ),
             container("").height(4.0),
-            tab_button("Terminal", self.tab == SettingsTab::Terminal, SettingsTab::Terminal),
+            tab_button(
+                "Terminal",
+                self.tab == SettingsTab::Terminal,
+                SettingsTab::Terminal
+            ),
             container("").height(4.0),
             tab_button("Keys", self.tab == SettingsTab::Keys, SettingsTab::Keys),
         ]
         .spacing(0);
 
         let content = match self.tab {
-            SettingsTab::General => {
-                column![text("No settings yet.")
+            SettingsTab::General => column![
+                text("No settings yet.")
                     .size(13)
-                    .style(ui_style::muted_text),]
-                .spacing(6)
-            }
+                    .style(ui_style::muted_text),
+            ]
+            .spacing(6),
             SettingsTab::Terminal => {
                 let header = column![
                     text("Terminal").size(14),
@@ -383,8 +390,7 @@ impl SettingsApp {
                 .spacing(4);
 
                 let font_row = row![
-                    text("Font Size")
-                        .size(13),
+                    text("Font Size").size(13),
                     container("").width(Length::Fill),
                     text_input("", &self.font_size_input)
                         .on_input(Message::FontSizeInputChanged)
@@ -585,10 +591,7 @@ impl SettingsApp {
                     for (index, entry) in self.settings.ssh_keys.iter().enumerate() {
                         let fingerprint = short_fingerprint(&entry.fingerprint);
                         let default_cell: Element<'_, Message> = if entry.is_default {
-                            text("Default")
-                                .size(13)
-                                .style(ui_style::muted_text)
-                                .into()
+                            text("Default").size(13).style(ui_style::muted_text).into()
                         } else {
                             button(text("Set").size(12))
                                 .padding([2, 4])
@@ -596,8 +599,7 @@ impl SettingsApp {
                                 .on_press(Message::SetDefaultKey(index))
                                 .into()
                         };
-                        let name_cell: Element<'_, Message> =
-                            text(&entry.name).size(13).into();
+                        let name_cell: Element<'_, Message> = text(&entry.name).size(13).into();
                         let actions: Element<'_, Message> = row![
                             button(text("Edit").size(12))
                                 .padding([2, 4])
@@ -756,9 +758,7 @@ fn parse_key_metadata(secret: &str) -> Result<(String, String), String> {
     let key = russh::keys::decode_secret_key(secret, None)
         .map_err(|err| format!("Failed to parse key: {}", err))?;
     let key_type = display_key_type(key.algorithm().as_str());
-    let fingerprint = key
-        .fingerprint(russh::keys::HashAlg::Sha256)
-        .to_string();
+    let fingerprint = key.fingerprint(russh::keys::HashAlg::Sha256).to_string();
     Ok((key_type, fingerprint))
 }
 

@@ -1,9 +1,9 @@
 use iced::Task;
 
 use crate::terminal::input::map_key_to_input;
+use crate::ui::App;
 use crate::ui::message::{ActiveView, Message};
 use crate::ui::state::SessionState;
-use crate::ui::App;
 
 pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Message>> {
     match message {
@@ -45,11 +45,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Option<Task<Mess
                                 let mut last = last_log.lock().unwrap();
                                 if last.elapsed().as_secs() >= 1 {
                                     let bytes = RX_BYTES.swap(0, Ordering::Relaxed);
-                                    tracing::info!(
-                                        "ui recv {} bytes/s (tab {})",
-                                        bytes,
-                                        tab_index
-                                    );
+                                    tracing::info!("ui recv {} bytes/s (tab {})", bytes, tab_index);
                                     *last = Instant::now();
                                 }
                                 (tab_index, data)
@@ -289,9 +285,7 @@ pub(in crate::ui) fn handle_runtime_event(
                     app.ime_ignore_next_input = true;
                     app.ime_buffer.clear();
                     if !text.is_empty() {
-                        return Some(Task::done(Message::TerminalInput(
-                            text.as_bytes().to_vec(),
-                        )));
+                        return Some(Task::done(Message::TerminalInput(text.as_bytes().to_vec())));
                     }
                 }
                 iced_core::input_method::Event::Preedit(content, _) => {
@@ -350,16 +344,15 @@ pub(in crate::ui) fn handle_runtime_event(
                         } else {
                             Message::TerminalInput(s.as_bytes().to_vec())
                         }
-                    } else if matches!(key, iced::keyboard::Key::Character(_)) && !modifiers.control()
+                    } else if matches!(key, iced::keyboard::Key::Character(_))
+                        && !modifiers.control()
                     {
                         if s.is_empty() || app.ime_focused || !app.ime_preedit.is_empty() {
                             Message::Ignore
                         } else {
                             Message::TerminalInput(s.as_bytes().to_vec())
                         }
-                    } else if let Some(data) =
-                        map_key_to_input(key.clone(), *modifiers)
-                    {
+                    } else if let Some(data) = map_key_to_input(key.clone(), *modifiers) {
                         Message::TerminalInput(data)
                     } else {
                         Message::Ignore
