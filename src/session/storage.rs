@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-const KEYRING_SERVICE: &str = "ssh-gui";
+const KEYRING_SERVICE: &str = "rivett";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SessionsFile {
@@ -19,7 +19,7 @@ pub struct SessionStorage {
 impl SessionStorage {
     pub fn new() -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        let config_dir = home.join(".ssh-gui");
+        let config_dir = home.join(".rivett");
 
         // Create directory if it doesn't exist
         if !config_dir.exists() {

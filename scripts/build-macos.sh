@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME_DEFAULT="SSH GUI"
-HELPER_NAME="SSH GUI Settings"
-BIN_NAME="ssh-gui"
-HELPER_BIN_NAME="ssh-gui-settings"
+APP_NAME_DEFAULT="Rivett"
+HELPER_NAME="Rivett Settings"
+BIN_NAME="rivett"
+HELPER_BIN_NAME="rivett-settings"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUNDLE_DIR="${ROOT_DIR}/target/release/bundle/osx"

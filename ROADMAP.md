@@ -1,4 +1,4 @@
-# SSH GUI Roadmap（跨平台 / 本地优先 / Git 同步）
+# Rivett Roadmap（跨平台 / 本地优先 / Git 同步）
 
 本文基于你的目标：跨平台、默认本地存储、可选 Git 同步、SFTP、端口转发与高安全性，给出分阶段的详细 roadmap。
 

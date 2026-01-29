@@ -63,7 +63,7 @@ impl App {
                 .and_then(|p| p.parent())
                 .and_then(|p| p.parent())
             {
-                let helper_app = app_dir.with_file_name("SSH GUI Settings.app");
+                let helper_app = app_dir.with_file_name("Rivett Settings.app");
                 if helper_app.exists() {
                     let status = Command::new("open")
                         .arg("-a")

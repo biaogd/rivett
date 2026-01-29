@@ -185,9 +185,9 @@ impl App {
 
     pub fn title(&self, _window: iced::window::Id) -> String {
         if self.active_tab == 0 {
-            "SSH GUI - Sessions".to_string()
+            "Rivett - Sessions".to_string()
         } else {
-            format!("SSH GUI - {}", self.tabs[self.active_tab].title)
+            format!("Rivett - {}", self.tabs[self.active_tab].title)
         }
     }
 

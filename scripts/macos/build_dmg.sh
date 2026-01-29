@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-APP_NAME="SSH GUI"
+APP_NAME="Rivett"
 APP_PATH="$ROOT_DIR/target/release/bundle/osx/${APP_NAME}.app"
-DMG_PATH="$DIST_DIR/SSH-GUI.dmg"
+DMG_PATH="$DIST_DIR/Rivett.dmg"
 
 "$ROOT_DIR/scripts/macos/make_icns.sh"
 

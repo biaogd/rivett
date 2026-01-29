@@ -4138,6 +4138,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "rivett"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs",
+ "fontdb 0.16.2",
+ "iced",
+ "iced_core",
+ "keyring",
+ "libc",
+ "objc2 0.6.3",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "parking_lot",
+ "portable-pty",
+ "rfd",
+ "russh",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-width 0.1.14",
+ "uuid",
+]
+
+[[package]]
 name = "roxmltree"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4882,37 +4913,6 @@ dependencies = [
  "bytes",
  "pem-rfc7468 0.7.0",
  "sha2 0.10.9",
-]
-
-[[package]]
-name = "ssh-gui"
-version = "0.1.0"
-dependencies = [
- "alacritty_terminal",
- "anyhow",
- "async-trait",
- "chrono",
- "dirs",
- "fontdb 0.16.2",
- "iced",
- "iced_core",
- "keyring",
- "libc",
- "objc2 0.6.3",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "parking_lot",
- "portable-pty",
- "rfd",
- "russh",
- "russh-sftp",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "unicode-width 0.1.14",
- "uuid",
 ]
 
 [[package]]

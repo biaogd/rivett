@@ -48,7 +48,7 @@ pub fn maybe_install() {
     let app = NSApplication::sharedApplication(mtm);
     let settings_title = NSString::from_str("Settings...");
     let settings_key = NSString::from_str(",");
-    let quit_title = NSString::from_str("Quit SSH GUI");
+    let quit_title = NSString::from_str("Quit Rivett");
     let quit_key = NSString::from_str("q");
 
     let Some(main_menu) = app.mainMenu() else {

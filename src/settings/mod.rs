@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-const KEYRING_SERVICE: &str = "ssh-gui";
+const KEYRING_SERVICE: &str = "rivett";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SshKeyEntry {
@@ -68,7 +68,7 @@ pub struct SettingsStorage {
 impl SettingsStorage {
     pub fn new() -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        let config_dir = home.join(".ssh-gui");
+        let config_dir = home.join(".rivett");
 
         if !config_dir.exists() {
             let _ = fs::create_dir_all(&config_dir);

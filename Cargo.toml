@@ -1,5 +1,5 @@
 [package]
-name = "ssh-gui"
+name = "rivett"
 version = "0.1.0"
 edition = "2024"
 
@@ -39,6 +39,6 @@ objc2-foundation = "0.3.2"
 objc2-app-kit = "0.3.2"
 
 [package.metadata.bundle]
-name = "SSH GUI"
-identifier = "com.sshgui.app"
+name = "Rivett"
+identifier = "com.rivett.app"
 icon = ["resources/app-icon.icns"]
