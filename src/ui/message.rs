@@ -1,3 +1,4 @@
+use crate::session::config::PortForwardDirection;
 use crate::terminal::TerminalDamage;
 use crate::ui::state::{PortForwardStatus, SftpContextAction, SftpPane, SftpTransferUpdate};
 use std::sync::Arc;
@@ -72,6 +73,7 @@ pub enum Message {
     PortForwardLocalHostChanged(String),
     PortForwardRemoteHostChanged(String),
     PortForwardRemotePortChanged(String),
+    PortForwardDirectionChanged(PortForwardDirection),
     AddPortForward,
     TogglePortForward(String),
     DeletePortForward(String),

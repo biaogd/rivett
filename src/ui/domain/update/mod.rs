@@ -202,6 +202,9 @@ impl App {
                     self.port_forward_panel_width = width;
                 }
             }
+            Message::PortForwardDirectionChanged(_) => {
+                return sessions::handle(self, message);
+            }
             Message::SftpLocalPathChanged(path) => {
                 if let Some(state) = self.sftp_state_for_tab_mut(self.active_tab) {
                     state.local_path = path;
@@ -874,7 +877,7 @@ impl App {
                                                     },
                                                     Err(_) => {
                                                         tracing::warn!("ssh write terminal response timeout - connection might be dead");
-                                                        // We don't break here immediately, hoping it's temporary? 
+                                                        // We don't break here immediately, hoping it's temporary?
                                                         // Or we should? If TCP is stuck, it's stuck.
                                                     }
                                                 }

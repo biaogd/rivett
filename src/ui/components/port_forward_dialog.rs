@@ -1,4 +1,4 @@
-use crate::session::config::{PortForwardRule, SessionConfig};
+use crate::session::config::{PortForwardDirection, PortForwardRule, SessionConfig};
 use crate::ui::Message;
 use crate::ui::state::PortForwardStatus;
 use crate::ui::style as ui_style;
@@ -12,6 +12,7 @@ pub fn render_manage_inline<'a>(
     local_port: &'a str,
     remote_host: &'a str,
     remote_port: &'a str,
+    direction: PortForwardDirection,
     error: Option<&'a String>,
 ) -> Element<'a, Message> {
     render_manage_body(
@@ -20,6 +21,7 @@ pub fn render_manage_inline<'a>(
         local_port,
         remote_host,
         remote_port,
+        direction,
         error,
     )
 }
@@ -37,6 +39,7 @@ fn render_manage_body<'a>(
     local_port: &'a str,
     remote_host: &'a str,
     remote_port: &'a str,
+    direction: PortForwardDirection,
     error: Option<&'a String>,
 ) -> Element<'a, Message> {
     let error_banner = if let Some(err) = error {
@@ -54,11 +57,68 @@ fn render_manage_body<'a>(
 
     let list = manage_list_view(session);
 
+    let (local_host_label, local_port_label, remote_host_label, remote_port_label) = match direction
+    {
+        PortForwardDirection::Local => (
+            "Local bind address",
+            "Local bind port",
+            "Remote target host",
+            "Remote target port",
+        ),
+        PortForwardDirection::Remote => (
+            "Local target host",
+            "Local target port",
+            "Remote bind address",
+            "Remote bind port",
+        ),
+        PortForwardDirection::Dynamic => (
+            "Local bind address",
+            "Local bind port",
+            "Target host (SOCKS)",
+            "Target port (SOCKS)",
+        ),
+    };
+
+    let direction_selector = row![
+        button(text("Local").size(12))
+            .padding([6, 12])
+            .style(ui_style::compact_tab(
+                direction == PortForwardDirection::Local
+            ))
+            .on_press(if direction == PortForwardDirection::Local {
+                Message::Ignore
+            } else {
+                Message::PortForwardDirectionChanged(PortForwardDirection::Local)
+            }),
+        button(text("Remote").size(12))
+            .padding([6, 12])
+            .style(ui_style::compact_tab(
+                direction == PortForwardDirection::Remote
+            ))
+            .on_press(if direction == PortForwardDirection::Remote {
+                Message::Ignore
+            } else {
+                Message::PortForwardDirectionChanged(PortForwardDirection::Remote)
+            }),
+        button(text("Dynamic").size(12))
+            .padding([6, 12])
+            .style(ui_style::compact_tab(
+                direction == PortForwardDirection::Dynamic
+            ))
+            .on_press(if direction == PortForwardDirection::Dynamic {
+                Message::Ignore
+            } else {
+                Message::PortForwardDirectionChanged(PortForwardDirection::Dynamic)
+            }),
+    ]
+    .spacing(6);
+
     let form = column![
         text("Add forward").size(12).style(ui_style::muted_text),
+        direction_selector,
         row![
             column![
-                text("Local address").size(11).style(ui_style::muted_text),
+                text(local_host_label).size(11).style(ui_style::muted_text),
                 text_input("127.0.0.1", local_host)
                     .on_input(Message::PortForwardLocalHostChanged)
                     .padding([7, 10])
@@ -70,7 +130,7 @@ fn render_manage_body<'a>(
             .width(Length::FillPortion(2)),
             container("").width(10.0),
             column![
-                text("Local port").size(11).style(ui_style::muted_text),
+                text(local_port_label).size(11).style(ui_style::muted_text),
                 text_input("8080", local_port)
                     .on_input(Message::PortForwardLocalPortChanged)
                     .padding([7, 10])
@@ -82,7 +142,7 @@ fn render_manage_body<'a>(
             .width(Length::FillPortion(1)),
             container("").width(10.0),
             column![
-                text("Remote host").size(11).style(ui_style::muted_text),
+                text(remote_host_label).size(11).style(ui_style::muted_text),
                 text_input("127.0.0.1", remote_host)
                     .on_input(Message::PortForwardRemoteHostChanged)
                     .padding([7, 10])
@@ -94,7 +154,7 @@ fn render_manage_body<'a>(
             .width(Length::FillPortion(2)),
             container("").width(10.0),
             column![
-                text("Remote port").size(11).style(ui_style::muted_text),
+                text(remote_port_label).size(11).style(ui_style::muted_text),
                 text_input("3306", remote_port)
                     .on_input(Message::PortForwardRemotePortChanged)
                     .padding([7, 10])
@@ -146,19 +206,23 @@ fn list_view<'a>(
     }
 
     let header_row = row![
-        text("Local address")
-            .size(13)
-            .style(ui_style::muted_text)
-            .width(Length::FillPortion(2)),
-        text("Local port")
+        text("Type")
             .size(13)
             .style(ui_style::muted_text)
             .width(Length::FillPortion(1)),
-        text("Remote host")
+        text("Bind address")
             .size(13)
             .style(ui_style::muted_text)
             .width(Length::FillPortion(2)),
-        text("Remote port")
+        text("Bind port")
+            .size(13)
+            .style(ui_style::muted_text)
+            .width(Length::FillPortion(1)),
+        text("Target host")
+            .size(13)
+            .style(ui_style::muted_text)
+            .width(Length::FillPortion(2)),
+        text("Target port")
             .size(13)
             .style(ui_style::muted_text)
             .width(Length::FillPortion(1)),
@@ -210,19 +274,23 @@ fn manage_list_view<'a>(session: &'a SessionConfig) -> Element<'a, Message> {
     }
 
     let header = row![
-        text("Local address")
-            .size(13)
-            .style(ui_style::muted_text)
-            .width(Length::FillPortion(2)),
-        text("Local port")
+        text("Type")
             .size(13)
             .style(ui_style::muted_text)
             .width(Length::FillPortion(1)),
-        text("Remote host")
+        text("Bind address")
             .size(13)
             .style(ui_style::muted_text)
             .width(Length::FillPortion(2)),
-        text("Remote port")
+        text("Bind port")
+            .size(13)
+            .style(ui_style::muted_text)
+            .width(Length::FillPortion(1)),
+        text("Target host")
+            .size(13)
+            .style(ui_style::muted_text)
+            .width(Length::FillPortion(2)),
+        text("Target port")
             .size(13)
             .style(ui_style::muted_text)
             .width(Length::FillPortion(1)),
@@ -248,11 +316,8 @@ fn render_rule_row<'a>(
     rule: &'a PortForwardRule,
     status: Option<&'a PortForwardStatus>,
 ) -> Element<'a, Message> {
-    let local_host = if rule.local_host.is_empty() {
-        "127.0.0.1"
-    } else {
-        rule.local_host.as_str()
-    };
+    let (direction_label, bind_host, bind_port, target_host, target_port) =
+        rule_display_values(rule);
     let status_color = match status {
         Some(PortForwardStatus::Pending) => Color::from_rgb8(10, 132, 255),
         Some(PortForwardStatus::Active) => Color::from_rgb8(52, 199, 89),
@@ -275,14 +340,13 @@ fn render_rule_row<'a>(
     });
 
     row![
-        text(local_host).size(13).width(Length::FillPortion(2)),
-        text(format!("{}", rule.local_port))
+        text(direction_label).size(13).width(Length::FillPortion(1)),
+        text(bind_host).size(13).width(Length::FillPortion(2)),
+        text(format!("{}", bind_port))
             .size(13)
             .width(Length::FillPortion(1)),
-        text(&rule.remote_host)
-            .size(13)
-            .width(Length::FillPortion(2)),
-        text(format!("{}", rule.remote_port))
+        text(target_host).size(13).width(Length::FillPortion(2)),
+        text(format!("{}", target_port))
             .size(13)
             .width(Length::FillPortion(1)),
         container(dot)
@@ -296,21 +360,17 @@ fn render_rule_row<'a>(
 }
 
 fn render_manage_row<'a>(rule: &'a PortForwardRule) -> Element<'a, Message> {
-    let local_host = if rule.local_host.is_empty() {
-        "127.0.0.1"
-    } else {
-        rule.local_host.as_str()
-    };
+    let (direction_label, bind_host, bind_port, target_host, target_port) =
+        rule_display_values(rule);
 
     row![
-        text(local_host).size(13).width(Length::FillPortion(2)),
-        text(format!("{}", rule.local_port))
+        text(direction_label).size(13).width(Length::FillPortion(1)),
+        text(bind_host).size(13).width(Length::FillPortion(2)),
+        text(format!("{}", bind_port))
             .size(13)
             .width(Length::FillPortion(1)),
-        text(&rule.remote_host)
-            .size(13)
-            .width(Length::FillPortion(2)),
-        text(format!("{}", rule.remote_port))
+        text(target_host).size(13).width(Length::FillPortion(2)),
+        text(format!("{}", target_port))
             .size(13)
             .width(Length::FillPortion(1)),
         button(text("Delete").size(12))
@@ -322,4 +382,35 @@ fn render_manage_row<'a>(rule: &'a PortForwardRule) -> Element<'a, Message> {
     .spacing(12)
     .align_y(Alignment::Center)
     .into()
+}
+
+fn rule_display_values<'a>(rule: &'a PortForwardRule) -> (&'a str, &'a str, u16, &'a str, u16) {
+    let local_host = if rule.local_host.is_empty() {
+        "127.0.0.1"
+    } else {
+        rule.local_host.as_str()
+    };
+    let remote_host = if rule.remote_host.is_empty() {
+        "127.0.0.1"
+    } else {
+        rule.remote_host.as_str()
+    };
+
+    match rule.direction {
+        PortForwardDirection::Local => (
+            "Local",
+            local_host,
+            rule.local_port,
+            remote_host,
+            rule.remote_port,
+        ),
+        PortForwardDirection::Remote => (
+            "Remote",
+            remote_host,
+            rule.remote_port,
+            local_host,
+            rule.local_port,
+        ),
+        PortForwardDirection::Dynamic => ("Dynamic", local_host, rule.local_port, "SOCKS", 0),
+    }
 }

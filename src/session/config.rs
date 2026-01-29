@@ -35,12 +35,28 @@ pub enum AuthMethod {
 pub struct PortForwardRule {
     pub id: String,
     #[serde(default)]
+    pub direction: PortForwardDirection,
+    #[serde(default)]
     pub local_host: String,
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
     #[serde(default)]
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PortForwardDirection {
+    Local,
+    Remote,
+    Dynamic,
+}
+
+impl Default for PortForwardDirection {
+    fn default() -> Self {
+        Self::Local
+    }
 }
 
 impl SessionConfig {

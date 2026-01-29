@@ -6,9 +6,10 @@ use super::message::{ActiveView, Message, SessionDialogTab};
 use super::state::{ConnectionTestStatus, SessionTab, SftpPane, SftpState, SftpTransferUpdate};
 use crate::core::SessionManager;
 use crate::platform::PlatformServices;
+use crate::session::config::PortForwardDirection;
 use crate::session::{SessionConfig, SessionStorage};
-use crate::settings::{AppSettings, SettingsStorage};
 use crate::settings::ThemeMode;
+use crate::settings::{AppSettings, SettingsStorage};
 use crate::ui::style as ui_style;
 use std::collections::HashMap;
 
@@ -51,6 +52,7 @@ pub struct App {
     pub(in crate::ui) port_forward_local_port: String,
     pub(in crate::ui) port_forward_remote_host: String,
     pub(in crate::ui) port_forward_remote_port: String,
+    pub(in crate::ui) port_forward_direction: PortForwardDirection,
     pub(in crate::ui) port_forward_error: Option<String>,
     pub(in crate::ui) port_forward_statuses:
         HashMap<String, HashMap<String, crate::ui::state::PortForwardStatus>>,
@@ -146,6 +148,7 @@ impl App {
                 port_forward_local_port: String::new(),
                 port_forward_remote_host: String::new(),
                 port_forward_remote_port: String::new(),
+                port_forward_direction: PortForwardDirection::Local,
                 port_forward_error: None,
                 port_forward_statuses: HashMap::new(),
                 window_width: 1024, // Default assumption

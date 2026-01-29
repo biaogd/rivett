@@ -28,6 +28,7 @@ pub fn render<'a>(
     port_forward_local_port: &'a str,
     port_forward_remote_host: &'a str,
     port_forward_remote_port: &'a str,
+    port_forward_direction: crate::session::config::PortForwardDirection,
     port_forward_error: Option<&'a String>,
 ) -> Element<'a, Message> {
     let is_new = editing_session
@@ -265,6 +266,7 @@ pub fn render<'a>(
                 port_forward_local_port,
                 port_forward_remote_host,
                 port_forward_remote_port,
+                port_forward_direction,
                 port_forward_error,
             )
         },

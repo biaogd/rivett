@@ -405,6 +405,7 @@ impl App {
                     &self.port_forward_local_port,
                     &self.port_forward_remote_host,
                     &self.port_forward_remote_port,
+                    self.port_forward_direction.clone(),
                     self.port_forward_error.as_ref(),
                 );
 

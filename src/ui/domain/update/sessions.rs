@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::session::SessionConfig;
-use crate::session::config::PortForwardRule;
+use crate::session::config::{PortForwardDirection, PortForwardRule};
 use crate::ui::App;
 use crate::ui::message::{ActiveView, Message, SessionDialogTab};
 use crate::ui::state::{ConnectionTestStatus, PortForwardStatus, SessionTab, SftpState};
@@ -46,6 +46,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.port_forward_local_port.clear();
             app.port_forward_remote_host.clear();
             app.port_forward_remote_port.clear();
+            app.port_forward_direction = PortForwardDirection::Local;
             app.port_forward_error = None;
             Task::none()
         }
@@ -202,6 +203,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.port_forward_local_port.clear();
                 app.port_forward_remote_host.clear();
                 app.port_forward_remote_port.clear();
+                app.port_forward_direction = PortForwardDirection::Local;
                 app.port_forward_error = None;
             }
             Task::none()
@@ -216,6 +218,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.port_forward_local_port.clear();
             app.port_forward_remote_host.clear();
             app.port_forward_remote_port.clear();
+            app.port_forward_direction = PortForwardDirection::Local;
             app.port_forward_error = None;
             Task::none()
         }
@@ -445,18 +448,20 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.port_forward_error = None;
             Task::none()
         }
+        Message::PortForwardDirectionChanged(direction) => {
+            app.port_forward_direction = direction;
+            app.port_forward_error = None;
+            Task::none()
+        }
         Message::AddPortForward => {
             let session_id = match app.port_forward_session_id.clone() {
                 Some(id) => id,
                 None => return Task::none(),
             };
 
-            let local_host = app.port_forward_local_host.trim().to_string();
-            let local_host = if local_host.is_empty() {
-                "127.0.0.1".to_string()
-            } else {
-                local_host
-            };
+            let local_host_input = app.port_forward_local_host.trim().to_string();
+            let remote_host_input = app.port_forward_remote_host.trim().to_string();
+            let direction = app.port_forward_direction.clone();
 
             let local_port = match app.port_forward_local_port.trim().parse::<u16>() {
                 Ok(port) if port > 0 => port,
@@ -467,20 +472,53 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             };
 
-            let remote_port = match app.port_forward_remote_port.trim().parse::<u16>() {
-                Ok(port) if port > 0 => port,
-                _ => {
-                    app.port_forward_error =
-                        Some("Remote port must be a number between 1 and 65535".to_string());
-                    return Task::none();
+            let remote_port = if direction == PortForwardDirection::Dynamic {
+                0
+            } else {
+                match app.port_forward_remote_port.trim().parse::<u16>() {
+                    Ok(port) if port > 0 => port,
+                    _ => {
+                        app.port_forward_error =
+                            Some("Remote port must be a number between 1 and 65535".to_string());
+                        return Task::none();
+                    }
                 }
             };
 
-            let remote_host = app.port_forward_remote_host.trim().to_string();
-            if remote_host.is_empty() {
-                app.port_forward_error = Some("Remote host is required".to_string());
-                return Task::none();
-            }
+            let (local_host, remote_host) = match direction {
+                PortForwardDirection::Local => {
+                    if remote_host_input.is_empty() {
+                        app.port_forward_error = Some("Remote host is required".to_string());
+                        return Task::none();
+                    }
+                    let local_host = if local_host_input.is_empty() {
+                        "127.0.0.1".to_string()
+                    } else {
+                        local_host_input
+                    };
+                    (local_host, remote_host_input)
+                }
+                PortForwardDirection::Remote => {
+                    if local_host_input.is_empty() {
+                        app.port_forward_error = Some("Local host is required".to_string());
+                        return Task::none();
+                    }
+                    let remote_host = if remote_host_input.is_empty() {
+                        "127.0.0.1".to_string()
+                    } else {
+                        remote_host_input
+                    };
+                    (local_host_input, remote_host)
+                }
+                PortForwardDirection::Dynamic => {
+                    let local_host = if local_host_input.is_empty() {
+                        "127.0.0.1".to_string()
+                    } else {
+                        local_host_input
+                    };
+                    (local_host, String::new())
+                }
+            };
 
             if let Some(session) = app
                 .editing_session
@@ -489,6 +527,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             {
                 session.port_forwards.push(PortForwardRule {
                     id: Uuid::new_v4().to_string(),
+                    direction,
                     local_host,
                     local_port,
                     remote_host,
@@ -502,6 +541,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             {
                 session.port_forwards.push(PortForwardRule {
                     id: Uuid::new_v4().to_string(),
+                    direction,
                     local_host,
                     local_port,
                     remote_host,
@@ -521,6 +561,7 @@ pub(in crate::ui) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.port_forward_local_host = "127.0.0.1".to_string();
             app.port_forward_remote_host.clear();
             app.port_forward_remote_port.clear();
+            app.port_forward_direction = PortForwardDirection::Local;
             app.port_forward_error = None;
             Task::none()
         }
@@ -634,6 +675,7 @@ fn start_edit_session(app: &mut App, session: SessionConfig, tab: SessionDialogT
     app.port_forward_local_port.clear();
     app.port_forward_remote_host.clear();
     app.port_forward_remote_port.clear();
+    app.port_forward_direction = PortForwardDirection::Local;
     app.port_forward_error = None;
 }
 

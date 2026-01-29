@@ -6,15 +6,15 @@ use russh_sftp::client::SftpSession;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use super::connection::SshClient;
-use crate::session::config::AuthMethod;
-use crate::session::config::PortForwardRule;
+use super::connection::{RemoteForwardMap, RemoteForwardTarget, SshClient, remote_forward_key};
+use crate::session::config::{AuthMethod, PortForwardDirection, PortForwardRule};
 
 use std::fmt;
 
@@ -24,6 +24,7 @@ pub struct SshSession {
     active_channel: Option<russh::ChannelWriteHalf<client::Msg>>,
     shell_channel: Arc<StdMutex<Option<ChannelId>>>,
     port_forwards: HashMap<String, PortForwardHandle>,
+    remote_forwards: RemoteForwardMap,
 }
 
 const CONNECT_TIMEOUT_SECS: u64 = 10;
@@ -37,8 +38,22 @@ impl fmt::Debug for SshSession {
 }
 
 struct PortForwardHandle {
-    cancel: oneshot::Sender<()>,
-    _task: JoinHandle<()>,
+    kind: PortForwardKind,
+}
+
+enum PortForwardKind {
+    Local {
+        cancel: oneshot::Sender<()>,
+        _task: JoinHandle<()>,
+    },
+    Dynamic {
+        cancel: oneshot::Sender<()>,
+        _task: JoinHandle<()>,
+    },
+    Remote {
+        address: String,
+        port: u32,
+    },
 }
 
 impl SshSession {
@@ -64,7 +79,8 @@ impl SshSession {
 
         // Create the handler
         let shell_channel = Arc::new(StdMutex::new(None));
-        let sh = SshClient::new(tx, shell_channel.clone());
+        let remote_forwards: RemoteForwardMap = Arc::new(StdMutex::new(HashMap::new()));
+        let sh = SshClient::new(tx, shell_channel.clone(), remote_forwards.clone());
 
         let addr = format!("{}:{}", host, port);
         let timeout = std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS);
@@ -119,6 +135,7 @@ impl SshSession {
                     active_channel: None,
                     shell_channel,
                     port_forwards: HashMap::new(),
+                    remote_forwards,
                 },
                 rx,
             ))
@@ -217,14 +234,20 @@ impl SshSession {
                 enabled.insert(rule.id.clone());
                 if !self.port_forwards.contains_key(&rule.id) {
                     tracing::info!(
-                        "port forward {} starting {}:{} -> {}:{}",
+                        "port forward {} starting {:?} {}:{} -> {}:{}",
                         rule.id,
+                        rule.direction,
                         rule.local_host,
                         rule.local_port,
                         rule.remote_host,
                         rule.remote_port
                     );
-                    match self.start_port_forward(rule).await {
+                    let result = match rule.direction {
+                        PortForwardDirection::Local => self.start_local_forward(rule).await,
+                        PortForwardDirection::Remote => self.start_remote_forward(rule).await,
+                        PortForwardDirection::Dynamic => self.start_dynamic_forward(rule).await,
+                    };
+                    match result {
                         Ok(_) => {
                             results.insert(rule.id.clone(), Ok(()));
                         }
@@ -235,8 +258,9 @@ impl SshSession {
                     }
                 } else {
                     tracing::info!(
-                        "port forward {} already active {}:{} -> {}:{}",
+                        "port forward {} already active {:?} {}:{} -> {}:{}",
                         rule.id,
+                        rule.direction,
                         rule.local_host,
                         rule.local_port,
                         rule.remote_host,
@@ -246,8 +270,9 @@ impl SshSession {
                 }
             } else {
                 tracing::info!(
-                    "port forward {} disabled {}:{} -> {}:{}",
+                    "port forward {} disabled {:?} {}:{} -> {}:{}",
                     rule.id,
+                    rule.direction,
                     rule.local_host,
                     rule.local_port,
                     rule.remote_host,
@@ -260,14 +285,14 @@ impl SshSession {
         let existing: Vec<String> = self.port_forwards.keys().cloned().collect();
         for id in existing {
             if !enabled.contains(&id) {
-                self.stop_port_forward(&id);
+                self.stop_port_forward(&id).await;
             }
         }
 
         results
     }
 
-    async fn start_port_forward(&mut self, rule: &PortForwardRule) -> Result<()> {
+    async fn start_local_forward(&mut self, rule: &PortForwardRule) -> Result<()> {
         if self.port_forwards.contains_key(&rule.id) {
             return Ok(());
         }
@@ -358,8 +383,10 @@ impl SshSession {
         self.port_forwards.insert(
             rule.id.clone(),
             PortForwardHandle {
-                cancel: cancel_tx,
-                _task: task,
+                kind: PortForwardKind::Local {
+                    cancel: cancel_tx,
+                    _task: task,
+                },
             },
         );
 
@@ -374,9 +401,242 @@ impl SshSession {
         Ok(())
     }
 
-    fn stop_port_forward(&mut self, rule_id: &str) {
+    async fn start_dynamic_forward(&mut self, rule: &PortForwardRule) -> Result<()> {
+        if self.port_forwards.contains_key(&rule.id) {
+            return Ok(());
+        }
+
+        let local_host = if rule.local_host.trim().is_empty() {
+            "127.0.0.1"
+        } else {
+            rule.local_host.trim()
+        };
+        let bind_addr: std::net::SocketAddr =
+            match format!("{}:{}", local_host, rule.local_port).parse() {
+                Ok(addr) => addr,
+                Err(err) => {
+                    tracing::warn!(
+                        "dynamic forward {} invalid bind {}:{}: {}",
+                        rule.id,
+                        local_host,
+                        rule.local_port,
+                        err
+                    );
+                    return Err(err.into());
+                }
+            };
+        let listener = match TcpListener::bind(bind_addr).await {
+            Ok(listener) => listener,
+            Err(err) => {
+                tracing::warn!(
+                    "dynamic forward {} bind {} failed: {}",
+                    rule.id,
+                    bind_addr,
+                    err
+                );
+                return Err(err.into());
+            }
+        };
+        let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+        let session = self.session.clone();
+        let rule_id = rule.id.clone();
+
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut cancel_rx => {
+                        tracing::info!("dynamic forward {} stopped", rule_id);
+                        break;
+                    }
+                    accept = listener.accept() => {
+                        let (mut stream, origin) = match accept {
+                            Ok(result) => result,
+                            Err(err) => {
+                                tracing::warn!("dynamic forward accept error: {}", err);
+                                continue;
+                            }
+                        };
+
+                        let session = session.clone();
+                        tokio::spawn(async move {
+                            if let Err(err) = handle_socks5(&mut stream, origin, session).await {
+                                tracing::warn!("dynamic forward socks error: {}", err);
+                            }
+                        });
+                    }
+                }
+            }
+        });
+
+        self.port_forwards.insert(
+            rule.id.clone(),
+            PortForwardHandle {
+                kind: PortForwardKind::Dynamic {
+                    cancel: cancel_tx,
+                    _task: task,
+                },
+            },
+        );
+
+        tracing::info!("dynamic forward {} listening on {}", rule.id, bind_addr);
+
+        Ok(())
+    }
+
+    async fn start_remote_forward(&mut self, rule: &PortForwardRule) -> Result<()> {
+        if self.port_forwards.contains_key(&rule.id) {
+            return Ok(());
+        }
+
+        let local_host = if rule.local_host.trim().is_empty() {
+            "127.0.0.1"
+        } else {
+            rule.local_host.trim()
+        };
+        let remote_host = if rule.remote_host.trim().is_empty() {
+            "127.0.0.1"
+        } else {
+            rule.remote_host.trim()
+        };
+
+        let mut handle = self.session.lock().await;
+        let bound_port = handle
+            .tcpip_forward(remote_host, rule.remote_port.into())
+            .await?;
+        drop(handle);
+
+        let key = remote_forward_key(remote_host, bound_port);
+        if let Ok(mut map) = self.remote_forwards.lock() {
+            map.insert(
+                key,
+                RemoteForwardTarget {
+                    local_host: local_host.to_string(),
+                    local_port: rule.local_port,
+                },
+            );
+        }
+
+        self.port_forwards.insert(
+            rule.id.clone(),
+            PortForwardHandle {
+                kind: PortForwardKind::Remote {
+                    address: remote_host.to_string(),
+                    port: bound_port,
+                },
+            },
+        );
+
+        tracing::info!(
+            "port forward {} remote listening on {}:{} -> {}:{}",
+            rule.id,
+            remote_host,
+            bound_port,
+            local_host,
+            rule.local_port
+        );
+
+        Ok(())
+    }
+
+    async fn stop_port_forward(&mut self, rule_id: &str) {
         if let Some(handle) = self.port_forwards.remove(rule_id) {
-            let _ = handle.cancel.send(());
+            match handle.kind {
+                PortForwardKind::Local { cancel, .. } => {
+                    let _ = cancel.send(());
+                }
+                PortForwardKind::Dynamic { cancel, .. } => {
+                    let _ = cancel.send(());
+                }
+                PortForwardKind::Remote { address, port } => {
+                    let key = remote_forward_key(&address, port);
+                    if let Ok(mut map) = self.remote_forwards.lock() {
+                        map.remove(&key);
+                    }
+                    let session = self.session.lock().await;
+                    if let Err(err) = session.cancel_tcpip_forward(address, port).await {
+                        tracing::warn!("remote forward cancel failed: {}", err);
+                    }
+                }
+            }
         }
     }
+}
+
+async fn handle_socks5(
+    stream: &mut tokio::net::TcpStream,
+    origin: std::net::SocketAddr,
+    session: Arc<AsyncMutex<client::Handle<SshClient>>>,
+) -> Result<()> {
+    let mut header = [0u8; 2];
+    stream.read_exact(&mut header).await?;
+    if header[0] != 0x05 {
+        return Err(anyhow::anyhow!("Unsupported SOCKS version"));
+    }
+    let nmethods = header[1] as usize;
+    let mut methods = vec![0u8; nmethods];
+    stream.read_exact(&mut methods).await?;
+    if !methods.iter().any(|m| *m == 0x00) {
+        let _ = stream.write_all(&[0x05, 0xFF]).await;
+        return Err(anyhow::anyhow!("No supported auth methods"));
+    }
+    stream.write_all(&[0x05, 0x00]).await?;
+
+    let mut req = [0u8; 4];
+    stream.read_exact(&mut req).await?;
+    if req[0] != 0x05 {
+        return Err(anyhow::anyhow!("Invalid SOCKS request version"));
+    }
+    if req[1] != 0x01 {
+        let _ = stream
+            .write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await;
+        return Err(anyhow::anyhow!("Unsupported SOCKS command"));
+    }
+
+    let addr = match req[3] {
+        0x01 => {
+            let mut ip = [0u8; 4];
+            stream.read_exact(&mut ip).await?;
+            std::net::Ipv4Addr::from(ip).to_string()
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut host = vec![0u8; len[0] as usize];
+            stream.read_exact(&mut host).await?;
+            String::from_utf8_lossy(&host).to_string()
+        }
+        0x04 => {
+            let mut ip = [0u8; 16];
+            stream.read_exact(&mut ip).await?;
+            std::net::Ipv6Addr::from(ip).to_string()
+        }
+        _ => {
+            let _ = stream
+                .write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await;
+            return Err(anyhow::anyhow!("Unsupported SOCKS address type"));
+        }
+    };
+
+    let mut port_bytes = [0u8; 2];
+    stream.read_exact(&mut port_bytes).await?;
+    let port = u16::from_be_bytes(port_bytes) as u32;
+
+    let origin_addr = origin.ip().to_string();
+    let origin_port = origin.port() as u32;
+    let channel = {
+        let handle = session.lock().await;
+        handle
+            .channel_open_direct_tcpip(addr, port, origin_addr, origin_port)
+            .await?
+    };
+
+    stream
+        .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await?;
+
+    let mut channel_stream = channel.into_stream();
+    let _ = tokio::io::copy_bidirectional(&mut channel_stream, stream).await;
+    Ok(())
 }

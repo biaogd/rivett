@@ -1,20 +1,40 @@
 use russh::keys::PublicKey;
 use russh::{ChannelId, client};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
 #[derive(Clone)]
 pub struct SshClient {
     tx: mpsc::UnboundedSender<Vec<u8>>,
     shell_channel: Arc<Mutex<Option<ChannelId>>>,
+    remote_forwards: RemoteForwardMap,
+}
+
+#[derive(Clone)]
+pub(super) struct RemoteForwardTarget {
+    pub local_host: String,
+    pub local_port: u16,
+}
+
+pub(super) type RemoteForwardMap = Arc<Mutex<HashMap<String, RemoteForwardTarget>>>;
+
+pub(super) fn remote_forward_key(address: &str, port: u32) -> String {
+    format!("{}:{}", address.trim(), port)
 }
 
 impl SshClient {
     pub fn new(
         tx: mpsc::UnboundedSender<Vec<u8>>,
         shell_channel: Arc<Mutex<Option<ChannelId>>>,
+        remote_forwards: RemoteForwardMap,
     ) -> Self {
-        Self { tx, shell_channel }
+        Self {
+            tx,
+            shell_channel,
+            remote_forwards,
+        }
     }
 }
 
@@ -112,6 +132,57 @@ impl client::Handler for SshClient {
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         async move {
             tracing::info!("ssh channel {:?} sent EOF", channel);
+            Ok(())
+        }
+    }
+
+    fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        originator_address: &str,
+        originator_port: u32,
+        _session: &mut client::Session,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
+        let remote_forwards = self.remote_forwards.clone();
+        let bind_key = remote_forward_key(connected_address, connected_port);
+        let origin = format!("{}:{}", originator_address, originator_port);
+        async move {
+            let target = remote_forwards
+                .lock()
+                .ok()
+                .and_then(|map| map.get(&bind_key).cloned());
+            let Some(target) = target else {
+                tracing::warn!(
+                    "remote forward {} missing target (origin {})",
+                    bind_key,
+                    origin
+                );
+                let _ = channel.close().await;
+                return Ok(());
+            };
+
+            tokio::spawn(async move {
+                let target_addr = format!("{}:{}", target.local_host, target.local_port);
+                let mut stream = match TcpStream::connect(&target_addr).await {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        tracing::warn!(
+                            "remote forward {} connect to {} failed: {}",
+                            bind_key,
+                            target_addr,
+                            err
+                        );
+                        let _ = channel.close().await;
+                        return;
+                    }
+                };
+
+                let mut channel_stream = channel.into_stream();
+                let _ = tokio::io::copy_bidirectional(&mut channel_stream, &mut stream).await;
+            });
+
             Ok(())
         }
     }
