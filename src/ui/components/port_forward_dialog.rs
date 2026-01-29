@@ -113,60 +113,73 @@ fn render_manage_body<'a>(
     ]
     .spacing(6);
 
+    let direction_hint = match direction {
+        PortForwardDirection::Local => "Bind locally, forward to remote target.",
+        PortForwardDirection::Remote => "Bind remotely, forward back to local target.",
+        PortForwardDirection::Dynamic => "Start a local SOCKS5 proxy.",
+    };
+
+    let inputs_row = row![
+        column![
+            text(local_host_label).size(11).style(ui_style::muted_text),
+            text_input("127.0.0.1", local_host)
+                .on_input(Message::PortForwardLocalHostChanged)
+                .padding([7, 10])
+                .size(13)
+                .style(ui_style::dialog_input)
+                .width(Length::Fill),
+        ]
+        .spacing(4)
+        .width(Length::FillPortion(2)),
+        container("").width(10.0),
+        column![
+            text(local_port_label).size(11).style(ui_style::muted_text),
+            text_input("8080", local_port)
+                .on_input(Message::PortForwardLocalPortChanged)
+                .padding([7, 10])
+                .size(13)
+                .style(ui_style::dialog_input)
+                .width(Length::Fill),
+        ]
+        .spacing(4)
+        .width(Length::FillPortion(1)),
+        container("").width(10.0),
+        column![
+            text(remote_host_label).size(11).style(ui_style::muted_text),
+            text_input("127.0.0.1", remote_host)
+                .on_input(Message::PortForwardRemoteHostChanged)
+                .padding([7, 10])
+                .size(13)
+                .style(ui_style::dialog_input)
+                .width(Length::Fill),
+        ]
+        .spacing(4)
+        .width(Length::FillPortion(2)),
+        container("").width(10.0),
+        column![
+            text(remote_port_label).size(11).style(ui_style::muted_text),
+            text_input("3306", remote_port)
+                .on_input(Message::PortForwardRemotePortChanged)
+                .padding([7, 10])
+                .size(13)
+                .style(ui_style::dialog_input)
+                .width(Length::Fill),
+        ]
+        .spacing(4)
+        .width(Length::FillPortion(1)),
+    ]
+    .spacing(10)
+    .align_y(Alignment::End);
+
     let form = column![
         text("Add forward").size(12).style(ui_style::muted_text),
-        direction_selector,
         row![
-            column![
-                text(local_host_label).size(11).style(ui_style::muted_text),
-                text_input("127.0.0.1", local_host)
-                    .on_input(Message::PortForwardLocalHostChanged)
-                    .padding([7, 10])
-                    .size(13)
-                    .style(ui_style::dialog_input)
-                    .width(Length::Fill),
-            ]
-            .spacing(4)
-            .width(Length::FillPortion(2)),
-            container("").width(10.0),
-            column![
-                text(local_port_label).size(11).style(ui_style::muted_text),
-                text_input("8080", local_port)
-                    .on_input(Message::PortForwardLocalPortChanged)
-                    .padding([7, 10])
-                    .size(13)
-                    .style(ui_style::dialog_input)
-                    .width(Length::Fill),
-            ]
-            .spacing(4)
-            .width(Length::FillPortion(1)),
-            container("").width(10.0),
-            column![
-                text(remote_host_label).size(11).style(ui_style::muted_text),
-                text_input("127.0.0.1", remote_host)
-                    .on_input(Message::PortForwardRemoteHostChanged)
-                    .padding([7, 10])
-                    .size(13)
-                    .style(ui_style::dialog_input)
-                    .width(Length::Fill),
-            ]
-            .spacing(4)
-            .width(Length::FillPortion(2)),
-            container("").width(10.0),
-            column![
-                text(remote_port_label).size(11).style(ui_style::muted_text),
-                text_input("3306", remote_port)
-                    .on_input(Message::PortForwardRemotePortChanged)
-                    .padding([7, 10])
-                    .size(13)
-                    .style(ui_style::dialog_input)
-                    .width(Length::Fill),
-            ]
-            .spacing(4)
-            .width(Length::FillPortion(1)),
+            direction_selector,
+            container("").width(Length::Fill),
+            text(direction_hint).size(11).style(ui_style::muted_text),
         ]
-        .spacing(10)
-        .align_y(Alignment::End),
+        .align_y(Alignment::Center),
+        container(inputs_row).style(ui_style::panel).padding(12),
         row![
             container("").width(Length::Fill),
             button(text("Add").size(12))
@@ -177,7 +190,7 @@ fn render_manage_body<'a>(
         .spacing(10)
         .align_y(Alignment::Center),
     ]
-    .spacing(6);
+    .spacing(8);
 
     column![
         error_banner,
