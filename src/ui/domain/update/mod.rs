@@ -1331,6 +1331,8 @@ async fn upload_local_file(
     pause_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pause_notify: std::sync::Arc<tokio::sync::Notify>,
 ) -> Result<(), String> {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let send_status = |status| {
@@ -1441,6 +1443,24 @@ async fn upload_local_file(
     }
     let _ = remote_file.sync_all().await;
     let _ = remote_file.shutdown().await;
+
+    #[cfg(unix)]
+    {
+        let mode = metadata.permissions().mode();
+        let attrs = russh_sftp::protocol::FileAttributes {
+            size: None,
+            uid: None,
+            user: None,
+            gid: None,
+            group: None,
+            permissions: Some(mode),
+            atime: None,
+            mtime: None,
+        };
+        if let Err(err) = remote_file.set_metadata(attrs).await {
+            tracing::warn!("Failed to set remote permissions: {}", err);
+        }
+    }
 
     let _ = tx.send(SftpTransferUpdate {
         id: transfer_id,
